@@ -36,6 +36,9 @@
 #include <QDir>
 #include <QUrl>
 
+#include <array>
+#include <cstdlib>
+
 namespace Settings {
 namespace {
 
@@ -181,6 +184,58 @@ void BuildMonitorPaths(SectionBuilder &builder) {
 	});
 }
 
+void BuildMonitorLimits(SectionBuilder &builder, AyuSectionBuilder &ayu) {
+	constexpr auto kMaxSizes = std::array<int, 14>{
+		0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1024, 2048, 4096, 8192,
+	};
+	constexpr auto kMinFree = std::array<int, 8>{
+		0, 256, 512, 1024, 2048, 4096, 8192, 16384,
+	};
+
+	const auto nearestIndex = [](const auto &table, int value) {
+		auto best = 0;
+		for (auto i = 1; i < int(table.size()); ++i) {
+			if (std::abs(table[i] - value) < std::abs(table[best] - value)) {
+				best = i;
+			}
+		}
+		return best;
+	};
+	const auto formatSize = [=](int mb, QString zeroLabel) {
+		if (mb <= 0) {
+			return zeroLabel;
+		}
+		return (mb >= 1024 && mb % 1024 == 0)
+			? (u"%1 GB"_q.arg(mb / 1024))
+			: (u"%1 MB"_q.arg(mb));
+	};
+
+	ayu.addSlider({
+		.id = u"ayu/monitorMaxFileSize"_q,
+		.title = tr::ayu_MonitorMaxFileSize(),
+		.steps = int(kMaxSizes.size()),
+		.current = nearestIndex(kMaxSizes, AyuSettings::getInstance().monitorMaxFileSizeMB()),
+		.onFinalChanged = [=](int index) {
+			AyuSettings::getInstance().setMonitorMaxFileSizeMB(kMaxSizes[index]);
+		},
+		.formatLabel = [=](int index) {
+			return formatSize(kMaxSizes[index], tr::ayu_MonitorUnlimited(tr::now));
+		},
+	});
+	ayu.addSlider({
+		.id = u"ayu/monitorMinDiskSpace"_q,
+		.title = tr::ayu_MonitorMinDiskSpace(),
+		.steps = int(kMinFree.size()),
+		.current = nearestIndex(kMinFree, AyuSettings::getInstance().monitorMinDiskSpaceMB()),
+		.onFinalChanged = [=](int index) {
+			AyuSettings::getInstance().setMonitorMinDiskSpaceMB(kMinFree[index]);
+		},
+		.formatLabel = [=](int index) {
+			return formatSize(kMinFree[index], tr::ayu_MonitorDisabled(tr::now));
+		},
+	});
+}
+
 void BuildMonitorDanger(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 
@@ -221,6 +276,8 @@ const auto kMeta = BuildHelper({
 	BuildMonitorToggles(builder, ayu);
 	builder.addDivider();
 	BuildMonitorPaths(builder);
+	builder.addDivider();
+	BuildMonitorLimits(builder, ayu);
 	builder.addDivider();
 	BuildMonitorDanger(builder);
 });

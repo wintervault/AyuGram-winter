@@ -366,6 +366,7 @@ public:
 	[[nodiscard]] bool monitorDownloadGif() const { return _monitorDownloadGif.current(); }
 	[[nodiscard]] bool monitorDownloadDocument() const { return _monitorDownloadDocument.current(); }
 	[[nodiscard]] int monitorMaxFileSizeMB() const { return _monitorMaxFileSizeMB.current(); }
+	[[nodiscard]] int monitorMinDiskSpaceMB() const { return _monitorMinDiskSpaceMB.current(); }
 
 	[[nodiscard]] rpl::producer<bool> monitorEnabledValue() const { return _monitorEnabled.value(); }
 	[[nodiscard]] rpl::producer<bool> monitorPausedValue() const { return _monitorPaused.value(); }
@@ -382,6 +383,7 @@ public:
 	void setMonitorDownloadGif(bool val);
 	void setMonitorDownloadDocument(bool val);
 	void setMonitorMaxFileSizeMB(int val);
+	void setMonitorMinDiskSpaceMB(int val);
 
 	void setSaveDeletedMessages(bool val);
 	void setSaveMessagesHistory(bool val);
@@ -753,6 +755,7 @@ private:
 	rpl::variable<bool> _monitorDownloadGif = true;
 	rpl::variable<bool> _monitorDownloadDocument = false;
 	rpl::variable<int> _monitorMaxFileSizeMB = 0;
+	rpl::variable<int> _monitorMinDiskSpaceMB = 1024;
 
 	rpl::variable<bool> _useGlobalGhostMode = true;
 	std::map<uint64, std::unique_ptr<GhostModeAccountSettings>> _ghostAccounts;

@@ -1141,6 +1141,12 @@ void AyuSettings::setMonitorMaxFileSizeMB(int val) {
 	save();
 }
 
+void AyuSettings::setMonitorMinDiskSpaceMB(int val) {
+	if (_monitorMinDiskSpaceMB.current() == val) return;
+	_monitorMinDiskSpaceMB = val;
+	save();
+}
+
 void to_json(nlohmann::json &j, const AyuSettings &s) {
 	auto ghostAccounts = nlohmann::json::object();
 	for (const auto &[key, value] : s._ghostAccounts) {
@@ -1249,6 +1255,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"monitorDownloadGif", s._monitorDownloadGif.current()},
 		{"monitorDownloadDocument", s._monitorDownloadDocument.current()},
 		{"monitorMaxFileSizeMB", s._monitorMaxFileSizeMB.current()},
+		{"monitorMinDiskSpaceMB", s._monitorMinDiskSpaceMB.current()},
 		{"messageShotSettings", s._messageShotSettings}
 	};
 }
@@ -1366,6 +1373,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._monitorDownloadGif = j.value("monitorDownloadGif", defaults._monitorDownloadGif.current());
 	s._monitorDownloadDocument = j.value("monitorDownloadDocument", defaults._monitorDownloadDocument.current());
 	s._monitorMaxFileSizeMB = j.value("monitorMaxFileSizeMB", defaults._monitorMaxFileSizeMB.current());
+	s._monitorMinDiskSpaceMB = j.value("monitorMinDiskSpaceMB", defaults._monitorMinDiskSpaceMB.current());
 
 	if (j.contains("messageShotSettings") && j["messageShotSettings"].is_object()) {
 		j["messageShotSettings"].get_to(s._messageShotSettings);

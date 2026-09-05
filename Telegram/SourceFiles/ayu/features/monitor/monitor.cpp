@@ -25,6 +25,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QStorageInfo>
 
 namespace AyuFeatures::Monitor {
 namespace {
@@ -319,6 +320,22 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	if (maxSize > 0 && expectedSize > maxSize) {
 		AppendEvent(userId, 1, u"skip"_q, peerId, msgId, u"oversize: %1"_q.arg(expectedSize));
 		return;
+	}
+
+	const auto minFreeBytes = int64(settings.monitorMinDiskSpaceMB()) * 1024 * 1024;
+	if (minFreeBytes > 0) {
+		const auto storage = QStorageInfo(ResolveSaveRoot());
+		const auto available = storage.bytesAvailable();
+		if (storage.isValid() && available >= 0 && available < minFreeBytes) {
+			AppendEvent(
+				userId,
+				1,
+				u"skip"_q,
+				peerId,
+				msgId,
+				u"low disk space: %1 MB free"_q.arg(available / (1024 * 1024)));
+			return;
+		}
 	}
 
 	auto row = std::optional<MonitorFile>();
