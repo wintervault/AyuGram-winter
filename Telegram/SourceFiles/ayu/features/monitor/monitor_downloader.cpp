@@ -52,7 +52,11 @@ void DownloadDocument(
 		const QString &path,
 		Fn<void(bool)> done) {
 	const auto state = std::make_shared<DownloadState>();
-	QTimer::singleShot(kDownloadTimeoutMs, [state, done] {
+	QTimer::singleShot(kDownloadTimeoutMs, [=] {
+		if (state->finished) {
+			return;
+		}
+		document->cancel();
 		Finish(state, done, false);
 	});
 

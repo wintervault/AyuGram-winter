@@ -75,6 +75,7 @@ std::vector<MonitorFile> getMonitorFiles(ID userId, int limit);
 
 void addMonitorEvent(const MonitorEvent &event);
 std::vector<MonitorEvent> getMonitorEvents(ID userId, int limit);
+void failPendingMonitorFiles(ID userId);
 
 }
 

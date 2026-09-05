@@ -116,9 +116,27 @@ struct PendingMedia {
 	return u"other"_q;
 }
 
+[[nodiscard]] std::vector<MonitorTarget> GetTargetsCached(ID userId) {
+	struct Cache {
+		ID userId = 0;
+		std::vector<MonitorTarget> targets;
+		crl::time fetched = 0;
+	};
+	static Cache cache;
+	constexpr auto kTtl = 5 * crl::time(1000);
+	const auto now = crl::now();
+	if (cache.userId == userId && now - cache.fetched < kTtl) {
+		return cache.targets;
+	}
+	cache.targets = AyuDatabase::Monitor::getAllMonitorTargets(userId);
+	cache.userId = userId;
+	cache.fetched = now;
+	return cache.targets;
+}
+
 [[nodiscard]] bool IsMonitored(not_null<HistoryItem*> item) {
 	const auto &settings = AyuSettings::getInstance();
-	if (!settings.monitorEnabled()) {
+	if (!settings.monitorEnabled() || settings.monitorPaused()) {
 		return false;
 	}
 	if (item->isLocal() || item->isService() || item->isEmpty()) {
@@ -128,7 +146,7 @@ struct PendingMedia {
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
 	const auto peerId = item->history()->peer->id.value & PeerId::kChatTypeMask;
 	const auto topicId = item->topicRootId().bare;
-	const auto targets = AyuDatabase::Monitor::getAllMonitorTargets(userId);
+	const auto targets = GetTargetsCached(userId);
 	for (const auto &target : targets) {
 		if (!target.enabled) {
 			continue;
@@ -251,7 +269,10 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 
 	auto row = std::optional<MonitorFile>();
 	if (auto existing = AyuDatabase::Monitor::getMonitorFile(userId, media.mediaId, typeName)) {
-		if (existing->status != int(MonitorFileStatus::failed)) {
+		const auto status = existing->status;
+		const auto fileGone = (status == int(MonitorFileStatus::done))
+			&& !QFileInfo::exists(QString::fromStdString(existing->filePath));
+		if (status != int(MonitorFileStatus::failed) && !fileGone) {
 			return;
 		}
 		existing->status = int(MonitorFileStatus::pending);
@@ -260,7 +281,12 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		AyuDatabase::Monitor::updateMonitorFile(*existing);
 		row = std::move(*existing);
 	} else {
-		const auto version = AyuDatabase::Monitor::getLatestFileVersion(userId, peerId, msgId).value_or(0) + 1;
+		const auto latestVersion = AyuDatabase::Monitor::getLatestFileVersion(userId, peerId, msgId);
+		if (!latestVersion.has_value()) {
+			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"version query failed"_q);
+			return;
+		}
+		const auto version = *latestVersion + 1;
 		const auto path = BuildFilePath(item, version);
 		if (path.isEmpty()) {
 			return;
@@ -320,6 +346,9 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 } // namespace
 
 void SubscribeSession(not_null<Main::Session*> session) {
+	AyuDatabase::Monitor::failPendingMonitorFiles(
+		session->userId().bare & PeerId::kChatTypeMask);
+
 	session->data().newItemAdded(
 	) | rpl::filter([=](not_null<HistoryItem*> item) {
 		return IsMonitored(item);

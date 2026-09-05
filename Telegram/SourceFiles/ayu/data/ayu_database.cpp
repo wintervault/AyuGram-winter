@@ -10,6 +10,8 @@
 #include "ayu/libs/sqlite/sqlite_orm.h"
 #include "base/unixtime.h"
 
+#include <algorithm>
+
 using namespace sqlite_orm;
 auto storage = make_storage(
 	"./tdata/ayudata.db",
@@ -767,7 +769,7 @@ std::optional<int> getLatestFileVersion(ID userId, ID peerId, int messageId) {
 		return std::get<0>(rows.front());
 	} catch (std::exception &ex) {
 		LOG(("Failed to get latest monitor file version: %1").arg(ex.what()));
-		return 0;
+		return std::nullopt;
 	}
 }
 
@@ -784,10 +786,33 @@ std::vector<MonitorFile> getMonitorFiles(ID userId, int limitRows) {
 }
 
 void addMonitorEvent(const MonitorEvent &event) {
+	constexpr auto kMaxEvents = 500;
 	try {
 		storage.insert(event);
+		const auto keep = storage.select(&MonitorEvent::fakeId,
+			order_by(&MonitorEvent::fakeId).desc(),
+			limit(kMaxEvents));
+		if (keep.size() >= kMaxEvents) {
+			const auto minKeep = *std::min_element(keep.begin(), keep.end());
+			storage.remove_all<MonitorEvent>(
+				where(c(&MonitorEvent::fakeId) < minKeep));
+		}
 	} catch (std::exception &ex) {
 		LOG(("Failed to add monitor event: %1").arg(ex.what()));
+	}
+}
+
+void failPendingMonitorFiles(ID userId) {
+	try {
+		storage.update_all(
+			set(
+				c(&MonitorFile::status) = int(MonitorFileStatus::failed),
+				c(&MonitorFile::errorInfo) = "interrupted by app exit"),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::pending)));
+	} catch (std::exception &ex) {
+		LOG(("Failed to fail pending monitor files: %1").arg(ex.what()));
 	}
 }
 
