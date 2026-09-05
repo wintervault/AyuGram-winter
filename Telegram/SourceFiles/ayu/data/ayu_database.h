@@ -72,6 +72,14 @@ std::optional<ID> addMonitorFile(const MonitorFile &file);
 void updateMonitorFile(const MonitorFile &file);
 std::optional<int> getLatestFileVersion(ID userId, ID peerId, int messageId);
 std::vector<MonitorFile> getMonitorFiles(ID userId, int limit);
+std::vector<MonitorFile> getMonitorFilesPage(
+	ID userId,
+	const MonitorFileFilter &filter,
+	ID beforeFakeId,
+	int limitRows);
+std::vector<MonitorFile> getMonitorVersions(ID userId, ID peerId, int messageId);
+std::vector<MonitorTargetStats> getTargetStats(ID userId);
+MonitorGlobalStats getGlobalStats(ID userId, int dayStart);
 
 void addMonitorEvent(const MonitorEvent &event);
 std::vector<MonitorEvent> getMonitorEvents(ID userId, int limit);

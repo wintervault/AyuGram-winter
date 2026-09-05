@@ -186,3 +186,28 @@ public:
 	int messageId;
 	std::string text;
 };
+
+struct MonitorFileFilter
+{
+	ID peerId = 0;       // 0 = any target
+	std::string type;    // empty = any type
+	int status = -1;     // -1 = any status
+	int minVersion = 0;  // 0 = any version
+};
+
+struct MonitorTargetStats
+{
+	ID peerId = 0;
+	int doneCount = 0;
+	int64 doneBytes = 0;
+	int failedCount = 0;
+};
+
+struct MonitorGlobalStats
+{
+	int todayCount = 0;
+	int64 todayBytes = 0;
+	int totalCount = 0;
+	int64 totalBytes = 0;
+	int failedCount = 0;
+};

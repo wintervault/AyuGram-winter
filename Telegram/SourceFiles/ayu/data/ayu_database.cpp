@@ -11,6 +11,8 @@
 #include "base/unixtime.h"
 
 #include <algorithm>
+#include <limits>
+#include <map>
 
 using namespace sqlite_orm;
 auto storage = make_storage(
@@ -783,6 +785,173 @@ std::vector<MonitorFile> getMonitorFiles(ID userId, int limitRows) {
 		LOG(("Failed to get monitor files: %1").arg(ex.what()));
 		return {};
 	}
+}
+
+std::vector<MonitorFile> getMonitorFilesPage(
+		ID userId,
+		const MonitorFileFilter &filter,
+		ID beforeFakeId,
+		int limitRows) {
+	// Keyset pagination on fakeId with a rolling window: every batch is
+	// an index-ordered scan, matching rows are kept until the page is
+	// full. Filtering in memory keeps a single code path for all the
+	// optional filter combinations.
+	constexpr auto kBatchSize = 500;
+	constexpr auto kMaxScanned = 20000;
+	auto page = std::vector<MonitorFile>();
+	auto cursor = beforeFakeId > 0
+		? beforeFakeId
+		: std::numeric_limits<ID>::max();
+	auto scanned = 0;
+	try {
+		while (int(page.size()) < limitRows && scanned < kMaxScanned) {
+			auto rows = storage.get_all<MonitorFile>(
+				where(
+					c(&MonitorFile::userId) == userId &&
+					c(&MonitorFile::fakeId) < cursor),
+				order_by(&MonitorFile::fakeId).desc(),
+				limit(kBatchSize));
+			if (rows.empty()) {
+				break;
+			}
+			scanned += int(rows.size());
+			for (auto &row : rows) {
+				cursor = row.fakeId;
+				if (filter.peerId != 0 && row.peerId != filter.peerId) {
+					continue;
+				}
+				if (!filter.type.empty() && row.type != filter.type) {
+					continue;
+				}
+				if (filter.status >= 0 && row.status != filter.status) {
+					continue;
+				}
+				if (filter.minVersion > 0 && row.version < filter.minVersion) {
+					continue;
+				}
+				page.push_back(row);
+				if (int(page.size()) >= limitRows) {
+					break;
+				}
+			}
+		}
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor file page: %1").arg(ex.what()));
+	}
+	return page;
+}
+
+std::vector<MonitorFile> getMonitorVersions(ID userId, ID peerId, int messageId) {
+	try {
+		return storage.get_all<MonitorFile>(
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::peerId) == peerId &&
+				c(&MonitorFile::messageId) == messageId),
+			order_by(&MonitorFile::version));
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor file versions: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+std::vector<MonitorTargetStats> getTargetStats(ID userId) {
+	try {
+		auto result = std::vector<MonitorTargetStats>();
+		auto done = std::map<ID, std::pair<int, int64>>();
+		auto doneRows = storage.select(
+			columns(
+				&MonitorFile::peerId,
+				count(&MonitorFile::fakeId),
+				sum(&MonitorFile::fileSize)),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::done)),
+			group_by(&MonitorFile::peerId));
+		for (auto &row : doneRows) {
+			auto bytes = int64(0);
+			if (const auto &sumBytes = std::get<2>(row)) {
+				bytes = int64(*sumBytes);
+			}
+			done.emplace(std::get<0>(row), std::make_pair(std::get<1>(row), bytes));
+		}
+		auto failedRows = storage.select(
+			columns(
+				&MonitorFile::peerId,
+				count(&MonitorFile::fakeId)),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::failed)),
+			group_by(&MonitorFile::peerId));
+		auto failed = std::map<ID, int>();
+		for (auto &row : failedRows) {
+			failed.emplace(std::get<0>(row), std::get<1>(row));
+		}
+		for (const auto &[peerId, doneStats] : done) {
+			auto stats = MonitorTargetStats();
+			stats.peerId = peerId;
+			stats.doneCount = doneStats.first;
+			stats.doneBytes = doneStats.second;
+			const auto it = failed.find(peerId);
+			stats.failedCount = (it != failed.end()) ? it->second : 0;
+			failed.erase(peerId);
+			result.push_back(stats);
+		}
+		for (const auto &[peerId, failedCount] : failed) {
+			auto stats = MonitorTargetStats();
+			stats.peerId = peerId;
+			stats.failedCount = failedCount;
+			result.push_back(stats);
+		}
+		return result;
+	} catch (std::exception &ex) {
+		LOG(("Failed to get target stats: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+MonitorGlobalStats getGlobalStats(ID userId, int dayStart) {
+	auto stats = MonitorGlobalStats();
+	try {
+		auto totalRows = storage.select(
+			columns(
+				count(&MonitorFile::fakeId),
+				sum(&MonitorFile::fileSize)),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::done)));
+		if (!totalRows.empty()) {
+			stats.totalCount = std::get<0>(totalRows.front());
+			if (const auto &bytes = std::get<1>(totalRows.front())) {
+				stats.totalBytes = int64(*bytes);
+			}
+		}
+		auto todayRows = storage.select(
+			columns(
+				count(&MonitorFile::fakeId),
+				sum(&MonitorFile::fileSize)),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::done) &&
+				c(&MonitorFile::downloadedDate) >= dayStart));
+		if (!todayRows.empty()) {
+			stats.todayCount = std::get<0>(todayRows.front());
+			if (const auto &bytes = std::get<1>(todayRows.front())) {
+				stats.todayBytes = int64(*bytes);
+			}
+		}
+		auto failedRows = storage.select(
+			columns(count(&MonitorFile::fakeId)),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::status) == int(MonitorFileStatus::failed)));
+		if (!failedRows.empty()) {
+			stats.failedCount = std::get<0>(failedRows.front());
+		}
+	} catch (std::exception &ex) {
+		LOG(("Failed to get global stats: %1").arg(ex.what()));
+	}
+	return stats;
 }
 
 void addMonitorEvent(const MonitorEvent &event) {
