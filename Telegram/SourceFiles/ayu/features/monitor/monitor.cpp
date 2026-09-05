@@ -10,6 +10,7 @@
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
 #include "ayu/features/monitor/monitor_downloader.h"
+#include "ayu/features/monitor/monitor_queue.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -346,15 +347,19 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	};
 
 	if (media.document) {
-		DownloadDocument(session, media.document, origin, path, finish);
+		EnqueueDocumentDownload(session, media.document, origin, path, finish);
 	} else {
-		DownloadPhoto(session, media.photo, *photoSize, origin, path, finish);
+		EnqueuePhotoDownload(session, media.photo, *photoSize, origin, path, finish);
 	}
 }
 
 } // namespace
 
 void SubscribeSession(not_null<Main::Session*> session) {
+	session->lifetime().add([=] {
+		ClearSessionDownloads(session);
+	});
+
 	AyuDatabase::Monitor::failPendingMonitorFiles(
 		session->userId().bare & PeerId::kChatTypeMask);
 

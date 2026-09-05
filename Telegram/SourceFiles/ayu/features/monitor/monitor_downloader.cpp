@@ -66,6 +66,12 @@ void DownloadDocument(
 		const QString &path,
 		Fn<void(bool)> done) {
 	const auto state = std::make_shared<DownloadState>();
+	// Release the queue slot and defang all pending callbacks when the
+	// session dies: the state owns every subscription, and the timeout
+	// timer checks the flag before touching the document.
+	session->lifetime().add([state, done] {
+		Finish(state, done, false);
+	});
 	QTimer::singleShot(kDownloadTimeoutMs, [=] {
 		if (state->finished) {
 			return;
@@ -101,6 +107,9 @@ void DownloadPhoto(
 		const QString &path,
 		Fn<void(bool)> done) {
 	const auto state = std::make_shared<DownloadState>();
+	session->lifetime().add([state, done] {
+		Finish(state, done, false);
+	});
 	QTimer::singleShot(kDownloadTimeoutMs, [state, done] {
 		Finish(state, done, false);
 	});

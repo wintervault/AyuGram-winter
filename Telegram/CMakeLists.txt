@@ -219,6 +219,8 @@ set(ayugram_files
         ayu/features/monitor/monitor.h
         ayu/features/monitor/monitor_downloader.cpp
         ayu/features/monitor/monitor_downloader.h
+        ayu/features/monitor/monitor_queue.cpp
+        ayu/features/monitor/monitor_queue.h
         ayu/features/message_shot/message_shot.cpp
         ayu/features/message_shot/message_shot.h
         ayu/features/message_shot/message_shot_theme_state.cpp
