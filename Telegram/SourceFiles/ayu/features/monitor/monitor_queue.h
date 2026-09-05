@@ -8,6 +8,9 @@
 
 #include "data/data_file_origin.h"
 #include "data/data_photo.h"
+#include "rpl/producer.h"
+
+#include <vector>
 
 class DocumentData;
 class PhotoData;
@@ -35,5 +38,14 @@ void EnqueuePhotoDownload(
 
 // Drop queued (not yet started) downloads of a session, on its end.
 void ClearSessionDownloads(not_null<Main::Session*> session);
+
+struct QueueSnapshot {
+	int active = 0;
+	int queued = 0;
+	std::vector<QString> activePaths;
+};
+
+[[nodiscard]] QueueSnapshot SnapshotQueue();
+[[nodiscard]] rpl::producer<> QueueChanged();
 
 } // namespace AyuFeatures::Monitor

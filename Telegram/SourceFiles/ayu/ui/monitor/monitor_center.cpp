@@ -317,6 +317,9 @@ void Widget::showView(View view) {
 		_content = _scroll->setOwnedWidget(
 			object_ptr<TargetsView>(this, controller()));
 	}
+	if (_view == View::activity && _activity) {
+		_activity->refreshStats();
+	}
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 		_content->show();

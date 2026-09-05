@@ -67,7 +67,6 @@ private:
 	const not_null<Window::SessionController*> _controller;
 
 	// Tiles.
-	QString _activeTile;
 	QString _todayTile;
 	QString _totalTile;
 	QString _failedTile;

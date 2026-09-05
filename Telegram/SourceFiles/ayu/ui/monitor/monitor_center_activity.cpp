@@ -8,6 +8,7 @@
 
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
+#include "ayu/features/monitor/monitor_queue.h"
 #include "ayu/ui/monitor/monitor_center.h"
 #include "base/unixtime.h"
 #include "base/unique_qptr.h"
@@ -26,6 +27,7 @@
 #include <QFileInfo>
 #include <QUrl>
 #include <map>
+#include <set>
 
 namespace MonitorCenter {
 namespace {
@@ -106,6 +108,12 @@ ActivityView::ActivityView(
 
 	refreshStats();
 	loadPage();
+
+	// Live overlay: repaint whenever the download queue changes.
+	AyuFeatures::Monitor::QueueChanged(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
 }
 
 void ActivityView::refreshStats() {
@@ -115,7 +123,6 @@ void ActivityView::refreshStats() {
 	const auto dayStart = now - (now % 86400);
 	const auto stats = AyuDatabase::Monitor::getGlobalStats(userId, dayStart);
 
-	_activeTile = u"\xE2\x80\x93"_q;
 	_todayTile = u"+%1 \xC2\xB7 %2"_q
 		.arg(stats.todayCount)
 		.arg(MonitorFormatBytes(stats.todayBytes));
@@ -255,12 +262,19 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		u"Total"_q,
 		u"Failed"_q,
 	};
+	const auto snap = AyuFeatures::Monitor::SnapshotQueue();
+	const auto activeTile = u"%1 / 3 Â· queue %2"_q
+		.arg(snap.active)
+		.arg(snap.queued);
 	const auto values = {
-		_activeTile,
+		activeTile,
 		_todayTile,
 		_totalTile,
 		_failedTile,
 	};
+	const auto activePaths = std::set<QString>(
+		snap.activePaths.begin(),
+		snap.activePaths.end());
 	auto captionIt = captions.begin();
 	auto valueIt = values.begin();
 	for (auto i = 0; i != 4; ++i, ++captionIt, ++valueIt) {
@@ -346,9 +360,14 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 
 		auto rowY = group.top + kGroupHeaderHeight;
 		for (const auto &row : group.rows) {
-			const auto dotColor = (row.statusColor == kStatusDone)
+			const auto downloading = activePaths.contains(row.path);
+			const auto status = downloading ? u"Downloading"_q : row.status;
+			const auto statusColor = downloading
+				? int(kStatusPending)
+				: row.statusColor;
+			const auto dotColor = (statusColor == kStatusDone)
 				? st::windowActiveTextFg
-				: (row.statusColor == kStatusFailed)
+				: (statusColor == kStatusFailed)
 				? st::boxTextFgError
 				: st::windowSubTextFg;
 			p.setPen(Qt::NoPen);
@@ -363,11 +382,19 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 					- st::normalFont->descent,
 				row.name);
 			p.setPen(st::windowSubTextFg);
+			const auto meta = row.meta + (downloading ? u" Â·  +1"_q : QString());
 			p.drawText(
-				w - 16 - versionMetrics.horizontalAdvance(row.meta),
+				w - 16 - versionMetrics.horizontalAdvance(status) - 8
+					- versionMetrics.horizontalAdvance(meta),
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
-				row.meta);
+				meta);
+			p.setPen(downloading ? st::windowActiveTextFg : p.pen());
+			p.drawText(
+				w - 16 - versionMetrics.horizontalAdvance(status),
+				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+					- st::normalFont->descent,
+				status);
 			rowY += kVersionHeight;
 		}
 
@@ -470,6 +497,17 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 	const auto pos = e->pos();
 	const auto globalPos = e->globalPos();
 	const auto chipY = kTilesHeight + (kFiltersHeight - 28) / 2;
+	if (pos.y() < kTilesHeight) {
+		// The failed tile filters the list to failed entries.
+		if (_failedCount > 0 && pos.x() >= (width() / 4) * 3) {
+			_statusFilter = 3;
+			_groups.clear();
+			_oldestFakeId = 0;
+			_endReached = false;
+			loadPage();
+		}
+		return;
+	}
 	if (pos.y() >= chipY && pos.y() < chipY + 28) {
 		const auto metrics = QFontMetrics(st::normalFont);
 		const auto chips = std::vector<QString>{

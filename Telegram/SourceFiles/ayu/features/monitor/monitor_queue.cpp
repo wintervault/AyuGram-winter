@@ -14,6 +14,7 @@
 #include <array>
 #include <deque>
 #include <limits>
+#include <set>
 
 #include <QTimer>
 
@@ -59,6 +60,16 @@ rpl::lifetime &QueueLifetime() {
 	return result;
 }
 
+rpl::event_stream<> &ChangedStream() {
+	static rpl::event_stream<> result;
+	return result;
+}
+
+std::multiset<QString> &ActivePaths() {
+	static std::multiset<QString> result;
+	return result;
+}
+
 // Leaked singleton: no destruction-order issues at app exit.
 QTimer &TickTimer() {
 	static const auto result = new QTimer();
@@ -71,12 +82,22 @@ void PumpNow();
 
 void Dispatch(Task task) {
 	++ActiveCount();
+	ActivePaths().insert(task.path);
+	ChangedStream().fire({});
 	// Cleared when the session dies. A dead session's failed task must
 	// never be re-queued: its pointers dangle after the teardown, and
 	// the re-queue happens after ClearSessionDownloads already ran.
 	const auto alive = std::make_shared<bool>(true);
 	const auto finish = [task, alive](bool ok) mutable {
 		--ActiveCount();
+		{
+			auto &paths = ActivePaths();
+			const auto it = paths.find(task.path);
+			if (it != paths.end()) {
+				paths.erase(it);
+			}
+		}
+		ChangedStream().fire({});
 		if (!ok && *alive && task.retries < kMaxRetries) {
 			// The row is marked failed by done(ok); retry later keeps
 			// it rescueable (in-memory messages refresh file_reference
@@ -183,6 +204,7 @@ void EnqueueDocumentDownload(
 		std::move(done),
 	});
 	EnsureInitialized();
+	ChangedStream().fire({});
 	Pump();
 }
 
@@ -203,6 +225,7 @@ void EnqueuePhotoDownload(
 		std::move(done),
 	});
 	EnsureInitialized();
+	ChangedStream().fire({});
 	Pump();
 }
 
@@ -214,6 +237,21 @@ void ClearSessionDownloads(not_null<Main::Session*> session) {
 			return task.session == session;
 		}),
 		queue.end());
+	ChangedStream().fire({});
+}
+
+QueueSnapshot SnapshotQueue() {
+	auto result = QueueSnapshot();
+	result.active = ActiveCount();
+	result.queued = int(Queue().size());
+	for (const auto &path : ActivePaths()) {
+		result.activePaths.push_back(path);
+	}
+	return result;
+}
+
+rpl::producer<> QueueChanged() {
+	return ChangedStream().events();
 }
 
 } // namespace AyuFeatures::Monitor
