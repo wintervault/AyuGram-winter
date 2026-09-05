@@ -135,3 +135,54 @@ public:
 	int messageId;
 	int entityCreateDate;
 };
+
+class MonitorTarget
+{
+public:
+	ID fakeId;
+	ID userId;
+	ID peerId;
+	ID topicId;
+	bool enabled;
+	std::string mediaTypes;
+	int addedDate;
+};
+
+enum class MonitorFileStatus : int {
+	pending = 0,
+	done = 1,
+	failed = 2,
+	skipped = 3,
+};
+
+class MonitorFile
+{
+public:
+	ID fakeId;
+	ID userId;
+	ID mediaId;
+	ID peerId;
+	ID topicId;
+	int messageId;
+	int version;
+	std::string type;
+	std::string filePath;
+	int64 fileSize;
+	int status;
+	std::string errorInfo;
+	int date;
+	int downloadedDate;
+};
+
+class MonitorEvent
+{
+public:
+	ID fakeId;
+	ID userId;
+	int date;
+	int level;
+	std::string category;
+	ID peerId;
+	int messageId;
+	std::string text;
+};

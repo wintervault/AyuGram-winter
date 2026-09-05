@@ -155,6 +155,8 @@ set(ayugram_files
         ayu/ui/settings/settings_filters.h
         ayu/ui/settings/settings_main.cpp
         ayu/ui/settings/settings_main.h
+        ayu/ui/settings/settings_monitor.cpp
+        ayu/ui/settings/settings_monitor.h
         ayu/ui/settings/settings_other.cpp
         ayu/ui/settings/settings_other.h
         ayu/ui/settings/filters/settings_filters_list.cpp
@@ -213,6 +215,10 @@ set(ayugram_files
         ayu/features/streamer_mode/platform/platform_streamer_mode.h
         ayu/features/streamer_mode/streamer_mode.cpp
         ayu/features/streamer_mode/streamer_mode.h
+        ayu/features/monitor/monitor.cpp
+        ayu/features/monitor/monitor.h
+        ayu/features/monitor/monitor_downloader.cpp
+        ayu/features/monitor/monitor_downloader.h
         ayu/features/message_shot/message_shot.cpp
         ayu/features/message_shot/message_shot.h
         ayu/features/message_shot/message_shot_theme_state.cpp

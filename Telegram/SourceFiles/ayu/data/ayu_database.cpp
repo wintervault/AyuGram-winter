@@ -141,6 +141,51 @@ auto storage = make_storage(
 		make_column("dialogId", &SpyMessageContentsRead::dialogId),
 		make_column("messageId", &SpyMessageContentsRead::messageId),
 		make_column("entityCreateDate", &SpyMessageContentsRead::entityCreateDate)
+	),
+	make_index("idx_monitor_file_userId_mediaId",
+			   column<MonitorFile>(&MonitorFile::userId),
+			   column<MonitorFile>(&MonitorFile::mediaId)),
+	make_index("idx_monitor_file_userId_peerId_messageId",
+			   column<MonitorFile>(&MonitorFile::userId),
+			   column<MonitorFile>(&MonitorFile::peerId),
+			   column<MonitorFile>(&MonitorFile::messageId)),
+	make_table<MonitorTarget>(
+		"MonitorTarget",
+		make_column("fakeId", &MonitorTarget::fakeId, primary_key().autoincrement()),
+		make_column("userId", &MonitorTarget::userId),
+		make_column("peerId", &MonitorTarget::peerId),
+		make_column("topicId", &MonitorTarget::topicId),
+		make_column("enabled", &MonitorTarget::enabled),
+		make_column("mediaTypes", &MonitorTarget::mediaTypes),
+		make_column("addedDate", &MonitorTarget::addedDate)
+	),
+	make_table<MonitorFile>(
+		"MonitorFile",
+		make_column("fakeId", &MonitorFile::fakeId, primary_key().autoincrement()),
+		make_column("userId", &MonitorFile::userId),
+		make_column("mediaId", &MonitorFile::mediaId),
+		make_column("peerId", &MonitorFile::peerId),
+		make_column("topicId", &MonitorFile::topicId),
+		make_column("messageId", &MonitorFile::messageId),
+		make_column("version", &MonitorFile::version),
+		make_column("type", &MonitorFile::type),
+		make_column("filePath", &MonitorFile::filePath),
+		make_column("fileSize", &MonitorFile::fileSize),
+		make_column("status", &MonitorFile::status),
+		make_column("errorInfo", &MonitorFile::errorInfo),
+		make_column("date", &MonitorFile::date),
+		make_column("downloadedDate", &MonitorFile::downloadedDate)
+	),
+	make_table<MonitorEvent>(
+		"MonitorEvent",
+		make_column("fakeId", &MonitorEvent::fakeId, primary_key().autoincrement()),
+		make_column("userId", &MonitorEvent::userId),
+		make_column("date", &MonitorEvent::date),
+		make_column("level", &MonitorEvent::level),
+		make_column("category", &MonitorEvent::category),
+		make_column("peerId", &MonitorEvent::peerId),
+		make_column("messageId", &MonitorEvent::messageId),
+		make_column("text", &MonitorEvent::text)
 	)
 );
 
@@ -579,6 +624,183 @@ bool hasPerDialogFilters() {
 		LOG(("Failed to check if there's any filters: %1").arg(ex.what()));
 		return false;
 	}
+}
+
+namespace Monitor {
+
+std::vector<MonitorTarget> getAllMonitorTargets(ID userId) {
+	try {
+		return storage.get_all<MonitorTarget>(
+			where(c(&MonitorTarget::userId) == userId));
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor targets: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+std::optional<MonitorTarget> getMonitorTarget(ID userId, ID peerId, ID topicId) {
+	try {
+		auto rows = storage.get_all<MonitorTarget>(
+			where(
+				c(&MonitorTarget::userId) == userId &&
+				c(&MonitorTarget::peerId) == peerId &&
+				c(&MonitorTarget::topicId) == topicId),
+			limit(1));
+		if (rows.empty()) {
+			return std::nullopt;
+		}
+		return rows.front();
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor target: %1").arg(ex.what()));
+		return std::nullopt;
+	}
+}
+
+void upsertMonitorTarget(const MonitorTarget &target) {
+	try {
+		auto existing = getMonitorTarget(target.userId, target.peerId, target.topicId);
+		if (existing.has_value()) {
+			auto updated = *existing;
+			updated.enabled = target.enabled;
+			updated.mediaTypes = target.mediaTypes;
+			storage.update(updated);
+		} else {
+			storage.insert(target);
+		}
+	} catch (std::exception &ex) {
+		LOG(("Failed to upsert monitor target: %1").arg(ex.what()));
+	}
+}
+
+void removeMonitorTarget(ID userId, ID peerId, ID topicId) {
+	try {
+		storage.remove_all<MonitorTarget>(
+			where(
+				c(&MonitorTarget::userId) == userId &&
+				c(&MonitorTarget::peerId) == peerId &&
+				c(&MonitorTarget::topicId) == topicId));
+	} catch (std::exception &ex) {
+		LOG(("Failed to remove monitor target: %1").arg(ex.what()));
+	}
+}
+
+bool hasMonitorFile(ID userId, ID mediaId) {
+	try {
+		return !storage.select(
+			columns(&MonitorFile::fakeId),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::mediaId) == mediaId),
+			limit(1)).empty();
+	} catch (std::exception &ex) {
+		LOG(("Failed to check monitor file: %1").arg(ex.what()));
+		return false;
+	}
+}
+
+std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId) {
+	try {
+		auto rows = storage.get_all<MonitorFile>(
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::mediaId) == mediaId),
+			limit(1));
+		if (rows.empty()) {
+			return std::nullopt;
+		}
+		return rows.front();
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor file: %1").arg(ex.what()));
+		return std::nullopt;
+	}
+}
+
+std::optional<MonitorFile> getMonitorFileById(ID userId, ID rowId) {
+	try {
+		auto rows = storage.get_all<MonitorFile>(
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::fakeId) == rowId),
+			limit(1));
+		if (rows.empty()) {
+			return std::nullopt;
+		}
+		return rows.front();
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor file by id: %1").arg(ex.what()));
+		return std::nullopt;
+	}
+}
+
+std::optional<ID> addMonitorFile(const MonitorFile &file) {
+	try {
+		return storage.insert(file);
+	} catch (std::exception &ex) {
+		LOG(("Failed to add monitor file: %1").arg(ex.what()));
+		return std::nullopt;
+	}
+}
+
+void updateMonitorFile(const MonitorFile &file) {
+	try {
+		storage.update(file);
+	} catch (std::exception &ex) {
+		LOG(("Failed to update monitor file: %1").arg(ex.what()));
+	}
+}
+
+std::optional<int> getLatestFileVersion(ID userId, ID peerId, int messageId) {
+	try {
+		auto rows = storage.select(
+			columns(&MonitorFile::version),
+			where(
+				c(&MonitorFile::userId) == userId &&
+				c(&MonitorFile::peerId) == peerId &&
+				c(&MonitorFile::messageId) == messageId),
+			order_by(&MonitorFile::version).desc(),
+			limit(1));
+		if (rows.empty()) {
+			return 0;
+		}
+		return std::get<0>(rows.front());
+	} catch (std::exception &ex) {
+		LOG(("Failed to get latest monitor file version: %1").arg(ex.what()));
+		return 0;
+	}
+}
+
+std::vector<MonitorFile> getMonitorFiles(ID userId, int limitRows) {
+	try {
+		return storage.get_all<MonitorFile>(
+			where(c(&MonitorFile::userId) == userId),
+			order_by(&MonitorFile::fakeId).desc(),
+			limit(limitRows));
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor files: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+void addMonitorEvent(const MonitorEvent &event) {
+	try {
+		storage.insert(event);
+	} catch (std::exception &ex) {
+		LOG(("Failed to add monitor event: %1").arg(ex.what()));
+	}
+}
+
+std::vector<MonitorEvent> getMonitorEvents(ID userId, int limitRows) {
+	try {
+		return storage.get_all<MonitorEvent>(
+			where(c(&MonitorEvent::userId) == userId),
+			order_by(&MonitorEvent::fakeId).desc(),
+			limit(limitRows));
+	} catch (std::exception &ex) {
+		LOG(("Failed to get monitor events: %1").arg(ex.what()));
+		return {};
+	}
+}
+
 }
 
 }

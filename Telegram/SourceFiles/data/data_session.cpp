@@ -95,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
+#include "ayu/features/monitor/monitor.h"
 #include "ayu/utils/telegram_helpers.h"
 
 
@@ -2917,6 +2918,9 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 		return;
 	}
 
+	// AyuGram monitor: capture media before it gets replaced
+	AyuFeatures::Monitor::HandleEditPreApply(existing);
+
 	// AyuGram saveMessagesHistory
 	const auto &settings = AyuSettings::getInstance();
 	HistoryMessageEdition edit;
@@ -2950,6 +2954,9 @@ proceed:
 	}, [&](const auto &data) {
 		existing->applyEdition(HistoryMessageEdition(_session, data));
 	});
+
+	// AyuGram monitor: capture replaced media
+	AyuFeatures::Monitor::HandleEditPostApply(existing);
 }
 
 void Session::processMessages(
@@ -3163,6 +3170,8 @@ void Session::processMessagesDeleted(
 		if (list && i != list->end()) {
 			const auto item = i->second;
 			const auto history = item->history();
+			// AyuGram monitor: capture media before destroy
+			AyuFeatures::Monitor::HandleItemDeleted(item);
 			if (isMessageSavable(item)) {
 				processMessageDelete(item);
 			} else {
@@ -3192,6 +3201,8 @@ void Session::processNonChannelMessagesDeleted(const QVector<MTPint> &data) {
 	for (const auto &messageId : data) {
 		if (const auto item = nonChannelMessage(messageId.v)) {
 			const auto history = item->history();
+			// AyuGram monitor: capture media before destroy
+			AyuFeatures::Monitor::HandleItemDeleted(item);
 			if (isMessageSavable(item)) {
 				processMessageDelete(item);
 			} else {

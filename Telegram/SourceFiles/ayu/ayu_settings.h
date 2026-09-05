@@ -354,6 +354,33 @@ public:
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
 
+	[[nodiscard]] bool monitorEnabled() const { return _monitorEnabled.current(); }
+	[[nodiscard]] bool monitorPaused() const { return _monitorPaused.current(); }
+	[[nodiscard]] QString monitorSaveRoot() const { return _monitorSaveRoot.current(); }
+	[[nodiscard]] bool monitorDownloadPhoto() const { return _monitorDownloadPhoto.current(); }
+	[[nodiscard]] bool monitorDownloadVideo() const { return _monitorDownloadVideo.current(); }
+	[[nodiscard]] bool monitorDownloadVoice() const { return _monitorDownloadVoice.current(); }
+	[[nodiscard]] bool monitorDownloadAudio() const { return _monitorDownloadAudio.current(); }
+	[[nodiscard]] bool monitorDownloadVideoNote() const { return _monitorDownloadVideoNote.current(); }
+	[[nodiscard]] bool monitorDownloadGif() const { return _monitorDownloadGif.current(); }
+	[[nodiscard]] bool monitorDownloadDocument() const { return _monitorDownloadDocument.current(); }
+	[[nodiscard]] int monitorMaxFileSizeMB() const { return _monitorMaxFileSizeMB.current(); }
+
+	[[nodiscard]] rpl::producer<bool> monitorEnabledValue() const { return _monitorEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> monitorPausedValue() const { return _monitorPaused.value(); }
+
+	void setMonitorEnabled(bool val);
+	void setMonitorPaused(bool val);
+	void setMonitorSaveRoot(const QString &val);
+	void setMonitorDownloadPhoto(bool val);
+	void setMonitorDownloadVideo(bool val);
+	void setMonitorDownloadVoice(bool val);
+	void setMonitorDownloadAudio(bool val);
+	void setMonitorDownloadVideoNote(bool val);
+	void setMonitorDownloadGif(bool val);
+	void setMonitorDownloadDocument(bool val);
+	void setMonitorMaxFileSizeMB(int val);
+
 	void setSaveDeletedMessages(bool val);
 	void setSaveMessagesHistory(bool val);
 	void setSaveForBots(bool val);
@@ -711,6 +738,18 @@ private:
 	rpl::variable<int> _avatarCorners = 23;
 	rpl::variable<bool> _singleCornerRadius = false;
 	rpl::variable<bool> _streamerMode = false;
+
+	rpl::variable<bool> _monitorEnabled = false;
+	rpl::variable<bool> _monitorPaused = false;
+	rpl::variable<QString> _monitorSaveRoot;
+	rpl::variable<bool> _monitorDownloadPhoto = true;
+	rpl::variable<bool> _monitorDownloadVideo = true;
+	rpl::variable<bool> _monitorDownloadVoice = true;
+	rpl::variable<bool> _monitorDownloadAudio = true;
+	rpl::variable<bool> _monitorDownloadVideoNote = true;
+	rpl::variable<bool> _monitorDownloadGif = true;
+	rpl::variable<bool> _monitorDownloadDocument = false;
+	rpl::variable<int> _monitorMaxFileSizeMB = 0;
 
 	rpl::variable<bool> _useGlobalGhostMode = true;
 	std::map<uint64, std::unique_ptr<GhostModeAccountSettings>> _ghostAccounts;

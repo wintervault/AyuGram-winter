@@ -58,4 +58,24 @@ bool hasPerDialogFilters();
 
 void moveCurrentDatabase();
 
+namespace Monitor {
+
+std::vector<MonitorTarget> getAllMonitorTargets(ID userId);
+std::optional<MonitorTarget> getMonitorTarget(ID userId, ID peerId, ID topicId);
+void upsertMonitorTarget(const MonitorTarget &target);
+void removeMonitorTarget(ID userId, ID peerId, ID topicId);
+
+bool hasMonitorFile(ID userId, ID mediaId);
+std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId);
+std::optional<MonitorFile> getMonitorFileById(ID userId, ID rowId);
+std::optional<ID> addMonitorFile(const MonitorFile &file);
+void updateMonitorFile(const MonitorFile &file);
+std::optional<int> getLatestFileVersion(ID userId, ID peerId, int messageId);
+std::vector<MonitorFile> getMonitorFiles(ID userId, int limit);
+
+void addMonitorEvent(const MonitorEvent &event);
+std::vector<MonitorEvent> getMonitorEvents(ID userId, int limit);
+
+}
+
 }

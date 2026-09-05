@@ -1069,6 +1069,72 @@ void AyuSettings::setStreamerMode(bool val) {
 	save();
 }
 
+void AyuSettings::setMonitorEnabled(bool val) {
+	if (_monitorEnabled.current() == val) return;
+	_monitorEnabled = val;
+	save();
+}
+
+void AyuSettings::setMonitorPaused(bool val) {
+	if (_monitorPaused.current() == val) return;
+	_monitorPaused = val;
+	save();
+}
+
+void AyuSettings::setMonitorSaveRoot(const QString &val) {
+	if (_monitorSaveRoot.current() == val) return;
+	_monitorSaveRoot = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadPhoto(bool val) {
+	if (_monitorDownloadPhoto.current() == val) return;
+	_monitorDownloadPhoto = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadVideo(bool val) {
+	if (_monitorDownloadVideo.current() == val) return;
+	_monitorDownloadVideo = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadVoice(bool val) {
+	if (_monitorDownloadVoice.current() == val) return;
+	_monitorDownloadVoice = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadAudio(bool val) {
+	if (_monitorDownloadAudio.current() == val) return;
+	_monitorDownloadAudio = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadVideoNote(bool val) {
+	if (_monitorDownloadVideoNote.current() == val) return;
+	_monitorDownloadVideoNote = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadGif(bool val) {
+	if (_monitorDownloadGif.current() == val) return;
+	_monitorDownloadGif = val;
+	save();
+}
+
+void AyuSettings::setMonitorDownloadDocument(bool val) {
+	if (_monitorDownloadDocument.current() == val) return;
+	_monitorDownloadDocument = val;
+	save();
+}
+
+void AyuSettings::setMonitorMaxFileSizeMB(int val) {
+	if (_monitorMaxFileSizeMB.current() == val) return;
+	_monitorMaxFileSizeMB = val;
+	save();
+}
+
 void to_json(nlohmann::json &j, const AyuSettings &s) {
 	auto ghostAccounts = nlohmann::json::object();
 	for (const auto &[key, value] : s._ghostAccounts) {
@@ -1165,6 +1231,17 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"streamerMode", s._streamerMode.current()},
+		{"monitorEnabled", s._monitorEnabled.current()},
+		{"monitorPaused", s._monitorPaused.current()},
+		{"monitorSaveRoot", s._monitorSaveRoot.current().toStdString()},
+		{"monitorDownloadPhoto", s._monitorDownloadPhoto.current()},
+		{"monitorDownloadVideo", s._monitorDownloadVideo.current()},
+		{"monitorDownloadVoice", s._monitorDownloadVoice.current()},
+		{"monitorDownloadAudio", s._monitorDownloadAudio.current()},
+		{"monitorDownloadVideoNote", s._monitorDownloadVideoNote.current()},
+		{"monitorDownloadGif", s._monitorDownloadGif.current()},
+		{"monitorDownloadDocument", s._monitorDownloadDocument.current()},
+		{"monitorMaxFileSizeMB", s._monitorMaxFileSizeMB.current()},
 		{"messageShotSettings", s._messageShotSettings}
 	};
 }
@@ -1269,6 +1346,18 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());
+
+	s._monitorEnabled = j.value("monitorEnabled", defaults._monitorEnabled.current());
+	s._monitorPaused = j.value("monitorPaused", defaults._monitorPaused.current());
+	s._monitorSaveRoot = QString::fromStdString(j.value("monitorSaveRoot", defaults._monitorSaveRoot.current().toStdString()));
+	s._monitorDownloadPhoto = j.value("monitorDownloadPhoto", defaults._monitorDownloadPhoto.current());
+	s._monitorDownloadVideo = j.value("monitorDownloadVideo", defaults._monitorDownloadVideo.current());
+	s._monitorDownloadVoice = j.value("monitorDownloadVoice", defaults._monitorDownloadVoice.current());
+	s._monitorDownloadAudio = j.value("monitorDownloadAudio", defaults._monitorDownloadAudio.current());
+	s._monitorDownloadVideoNote = j.value("monitorDownloadVideoNote", defaults._monitorDownloadVideoNote.current());
+	s._monitorDownloadGif = j.value("monitorDownloadGif", defaults._monitorDownloadGif.current());
+	s._monitorDownloadDocument = j.value("monitorDownloadDocument", defaults._monitorDownloadDocument.current());
+	s._monitorMaxFileSizeMB = j.value("monitorMaxFileSizeMB", defaults._monitorMaxFileSizeMB.current());
 
 	if (j.contains("messageShotSettings") && j["messageShotSettings"].is_object()) {
 		j["messageShotSettings"].get_to(s._messageShotSettings);

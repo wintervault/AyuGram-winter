@@ -15,6 +15,7 @@
 #include "ayu/ui/settings/settings_chats.h"
 #include "ayu/ui/settings/settings_filters.h"
 #include "ayu/ui/settings/settings_general.h"
+#include "ayu/ui/settings/settings_monitor.h"
 #include "ayu/ui/settings/settings_other.h"
 #include "core/version.h"
 #include "settings/settings_builder.h"
@@ -124,6 +125,11 @@ void BuildCategories(SectionBuilder &builder) {
 		.title = tr::ayu_CategoryChats(),
 		.targetSection = AyuChats::Id(),
 		.icon = { &st::menuIconChatBubble },
+	});
+	builder.addSectionButton({
+		.title = tr::ayu_CategoryMonitor(),
+		.targetSection = AyuMonitor::Id(),
+		.icon = { &st::menuIconDownload },
 	});
 	builder.addSectionButton({
 		.title = tr::ayu_CategoryOther(),

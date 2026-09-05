@@ -12,6 +12,7 @@
 #include "api/api_sending.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
+#include "ayu/data/ayu_database.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
@@ -427,6 +428,40 @@ void AddOpenChannelAction(PeerData *peerData,
 			sessionController->showPeerHistory(chat, Window::SectionShow::Way::Forward);
 		},
 		&st::menuIconChannel);
+}
+
+void AddMonitorAction(PeerData *peerData,
+					  not_null<Window::SessionController*> sessionController,
+					  const Window::PeerMenuCallback &addCallback) {
+	if (!peerData) {
+		return;
+	}
+
+	const auto session = &sessionController->session();
+	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
+	const auto peerId = peerData->id.value & PeerId::kChatTypeMask;
+	const auto existing = AyuDatabase::Monitor::getMonitorTarget(userId, peerId, 0);
+	const auto monitored = existing.has_value() && existing->enabled;
+
+	addCallback(
+		monitored
+			? tr::ayu_MonitorRemoveFromChat(tr::now)
+			: tr::ayu_MonitorAddToChat(tr::now),
+		[=]
+		{
+			if (monitored) {
+				AyuDatabase::Monitor::removeMonitorTarget(userId, peerId, 0);
+			} else {
+				auto target = MonitorTarget();
+				target.userId = userId;
+				target.peerId = peerId;
+				target.topicId = 0;
+				target.enabled = true;
+				target.addedDate = base::unixtime::now();
+				AyuDatabase::Monitor::upsertMonitorTarget(target);
+			}
+		},
+		&st::menuIconDownload);
 }
 
 void AddShadowBanAction(PeerData *peerData,

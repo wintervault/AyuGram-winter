@@ -67,6 +67,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/monitor/monitor.h"
 #include "api/api_blocked_peers.h"
 
 
@@ -215,6 +216,8 @@ Session::Session(
 , _fastButtonsBots(std::make_unique<Support::FastButtonsBots>(this))
 , _saveSettingsTimer([=] { saveSettings(); }) {
 	Expects(_settings != nullptr);
+
+	AyuFeatures::Monitor::SubscribeSession(this);
 
 	_api->requestTermsUpdate();
 	_api->requestFullPeer(_user);
