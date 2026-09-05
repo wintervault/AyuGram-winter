@@ -170,6 +170,36 @@ struct PendingMedia {
 	return false;
 }
 
+// Per-target mediaTypes field: a comma-separated whitelist of type
+// names. An empty value means the global type toggles apply as-is.
+[[nodiscard]] bool TargetAllowsType(
+		ID userId,
+		ID peerId,
+		ID topicId,
+		MediaType type) {
+	const auto targets = GetTargetsCached(userId);
+	const auto name = TypeName(type);
+	for (const auto &target : targets) {
+		if (!target.enabled || target.peerId != peerId) {
+			continue;
+		}
+		if (target.topicId != 0 && target.topicId != topicId) {
+			continue;
+		}
+		if (target.mediaTypes.empty()) {
+			return true;
+		}
+		const auto parts = QString::fromStdString(target.mediaTypes)
+			.split(',', Qt::SkipEmptyParts);
+		for (const auto &part : parts) {
+			if (part.trimmed() == name) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 void AppendEvent(
 		ID userId,
 		int level,
@@ -301,6 +331,10 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 
 	if (!TypeAllowed(media.type)) {
 		AppendEvent(userId, 0, u"skip"_q, peerId, msgId, u"type disabled: %1"_q.arg(TypeName(media.type)));
+		return;
+	}
+	if (!TargetAllowsType(userId, peerId, item->topicRootId().bare, media.type)) {
+		AppendEvent(userId, 0, u"skip"_q, peerId, msgId, u"type not allowed by target: %1"_q.arg(TypeName(media.type)));
 		return;
 	}
 
