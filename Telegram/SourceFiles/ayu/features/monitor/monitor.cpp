@@ -226,13 +226,12 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	const auto session = &item->history()->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
 	const auto peerId = item->history()->peer->id.value & PeerId::kChatTypeMask;
-
-	if (AyuDatabase::Monitor::hasMonitorFile(userId, media.mediaId)) {
-		return;
-	}
+	const auto msgId = item->id.bare;
+	const auto typeName = TypeName(media.type).toStdString();
+	const auto origin = item->fullId();
 
 	if (!TypeAllowed(media.type)) {
-		AppendEvent(userId, 0, u"skip"_q, peerId, item->id.bare, u"type disabled: %1"_q.arg(TypeName(media.type)));
+		AppendEvent(userId, 0, u"skip"_q, peerId, msgId, u"type disabled: %1"_q.arg(TypeName(media.type)));
 		return;
 	}
 
@@ -241,42 +240,57 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		: media.photo->imageByteSize(Data::PhotoSize::Large);
 	const auto maxSize = int64(settings.monitorMaxFileSizeMB()) * 1024 * 1024;
 	if (maxSize > 0 && expectedSize > maxSize) {
-		AppendEvent(userId, 1, u"skip"_q, peerId, item->id.bare, u"oversize: %1"_q.arg(expectedSize));
+		AppendEvent(userId, 1, u"skip"_q, peerId, msgId, u"oversize: %1"_q.arg(expectedSize));
 		return;
 	}
 
-	const auto version = AyuDatabase::Monitor::getLatestFileVersion(userId, peerId, item->id.bare).value_or(0) + 1;
-	const auto path = BuildFilePath(item, version);
-	if (path.isEmpty()) {
-		return;
-	}
-	const auto dir = QFileInfo(path).absolutePath();
-	if (!QDir().mkpath(dir)) {
-		AppendEvent(userId, 2, u"error"_q, peerId, item->id.bare, u"mkpath failed: %1"_q.arg(dir));
-		return;
+	auto row = std::optional<MonitorFile>();
+	if (auto existing = AyuDatabase::Monitor::getMonitorFile(userId, media.mediaId, typeName)) {
+		if (existing->status != int(MonitorFileStatus::failed)) {
+			return;
+		}
+		existing->status = int(MonitorFileStatus::pending);
+		existing->errorInfo.clear();
+		existing->downloadedDate = base::unixtime::now();
+		AyuDatabase::Monitor::updateMonitorFile(*existing);
+		row = std::move(*existing);
+	} else {
+		const auto version = AyuDatabase::Monitor::getLatestFileVersion(userId, peerId, msgId).value_or(0) + 1;
+		const auto path = BuildFilePath(item, version);
+		if (path.isEmpty()) {
+			return;
+		}
+		const auto dir = QFileInfo(path).absolutePath();
+		if (!QDir().mkpath(dir)) {
+			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"mkpath failed: %1"_q.arg(dir));
+			return;
+		}
+		auto fresh = MonitorFile();
+		fresh.userId = userId;
+		fresh.mediaId = media.mediaId;
+		fresh.peerId = peerId;
+		fresh.topicId = item->topicRootId().bare;
+		fresh.messageId = msgId;
+		fresh.version = version;
+		fresh.type = typeName;
+		fresh.filePath = path.toStdString();
+		fresh.fileSize = expectedSize;
+		fresh.status = int(MonitorFileStatus::pending);
+		fresh.date = item->date();
+		fresh.downloadedDate = base::unixtime::now();
+		const auto rowId = AyuDatabase::Monitor::addMonitorFile(fresh);
+		if (!rowId.has_value()) {
+			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"db insert failed"_q);
+			return;
+		}
+		fresh.fakeId = rowId.value();
+		row = std::move(fresh);
 	}
 
-	auto row = MonitorFile();
-	row.userId = userId;
-	row.mediaId = media.mediaId;
-	row.peerId = peerId;
-	row.topicId = item->topicRootId().bare;
-	row.messageId = item->id.bare;
-	row.version = version;
-	row.type = TypeName(media.type).toStdString();
-	row.filePath = path.toStdString();
-	row.fileSize = expectedSize;
-	row.status = int(MonitorFileStatus::pending);
-	row.date = item->date();
-	row.downloadedDate = base::unixtime::now();
-	const auto rowId = AyuDatabase::Monitor::addMonitorFile(row);
-	if (!rowId.has_value()) {
-		AppendEvent(userId, 2, u"error"_q, peerId, item->id.bare, u"db insert failed"_q);
-		return;
-	}
-
+	const auto rowId = row->fakeId;
+	const auto path = QString::fromStdString(row->filePath);
 	const auto finish = [=](bool ok) {
-		if (auto existing = AyuDatabase::Monitor::getMonitorFileById(userId, rowId.value())) {
+		if (auto existing = AyuDatabase::Monitor::getMonitorFileById(userId, rowId)) {
 			existing->status = int(ok ? MonitorFileStatus::done : MonitorFileStatus::failed);
 			existing->errorInfo = ok ? "" : "download failed";
 			existing->downloadedDate = base::unixtime::now();
@@ -286,17 +300,15 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 				ok ? 0 : 2,
 				u"download"_q,
 				peerId,
-				item->id.bare,
-				(ok
-					? u"saved: %1"_q.arg(path)
-					: u"failed: %1"_q.arg(path)));
+				msgId,
+				ok ? u"saved: %1"_q.arg(path) : u"failed: %1"_q.arg(path));
 		}
 	};
 
 	if (media.document) {
-		DownloadDocument(session, media.document, item->fullId(), path, finish);
+		DownloadDocument(session, media.document, origin, path, finish);
 	} else {
-		DownloadPhoto(session, media.photo, item->fullId(), path, finish);
+		DownloadPhoto(session, media.photo, origin, path, finish);
 	}
 }
 

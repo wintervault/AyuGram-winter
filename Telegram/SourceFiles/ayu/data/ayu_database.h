@@ -65,8 +65,8 @@ std::optional<MonitorTarget> getMonitorTarget(ID userId, ID peerId, ID topicId);
 void upsertMonitorTarget(const MonitorTarget &target);
 void removeMonitorTarget(ID userId, ID peerId, ID topicId);
 
-bool hasMonitorFile(ID userId, ID mediaId);
-std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId);
+bool hasMonitorFile(ID userId, ID mediaId, const std::string &type);
+std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId, const std::string &type);
 std::optional<MonitorFile> getMonitorFileById(ID userId, ID rowId);
 std::optional<ID> addMonitorFile(const MonitorFile &file);
 void updateMonitorFile(const MonitorFile &file);

@@ -104,7 +104,6 @@ void BuildMonitorToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 void BuildMonitorPaths(SectionBuilder &builder) {
 	const auto controller = builder.controller();
-	const auto &settings = AyuSettings::getInstance();
 
 	builder.addButton({
 		.id = u"ayu/monitorSaveRoot"_q,

@@ -684,13 +684,14 @@ void removeMonitorTarget(ID userId, ID peerId, ID topicId) {
 	}
 }
 
-bool hasMonitorFile(ID userId, ID mediaId) {
+bool hasMonitorFile(ID userId, ID mediaId, const std::string &type) {
 	try {
 		return !storage.select(
 			columns(&MonitorFile::fakeId),
 			where(
 				c(&MonitorFile::userId) == userId &&
-				c(&MonitorFile::mediaId) == mediaId),
+				c(&MonitorFile::mediaId) == mediaId &&
+				c(&MonitorFile::type) == type),
 			limit(1)).empty();
 	} catch (std::exception &ex) {
 		LOG(("Failed to check monitor file: %1").arg(ex.what()));
@@ -698,12 +699,13 @@ bool hasMonitorFile(ID userId, ID mediaId) {
 	}
 }
 
-std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId) {
+std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId, const std::string &type) {
 	try {
 		auto rows = storage.get_all<MonitorFile>(
 			where(
 				c(&MonitorFile::userId) == userId &&
-				c(&MonitorFile::mediaId) == mediaId),
+				c(&MonitorFile::mediaId) == mediaId &&
+				c(&MonitorFile::type) == type),
 			limit(1));
 		if (rows.empty()) {
 			return std::nullopt;
