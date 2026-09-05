@@ -11,6 +11,7 @@
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
 #include "ayu/features/monitor/monitor.h"
+#include "ayu/ui/monitor/monitor_center.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
 #include "ayu/ui/settings/settings_main.h"
@@ -162,6 +163,14 @@ void BuildMonitorPaths(SectionBuilder &builder) {
 				[=](QString &&result) {
 					AyuSettings::getInstance().setMonitorSaveRoot(result);
 				});
+		},
+	});
+	builder.addButton({
+		.id = u"ayu/monitorCenter"_q,
+		.title = tr::ayu_MonitorCenterOpen(),
+		.icon = { &st::menuIconStats },
+		.onClick = [=] {
+			MonitorCenter::ShowMonitorCenter(controller);
 		},
 	});
 	builder.addButton({

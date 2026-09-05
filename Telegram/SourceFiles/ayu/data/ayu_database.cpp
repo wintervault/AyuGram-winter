@@ -787,7 +787,7 @@ std::vector<MonitorFile> getMonitorFiles(ID userId, int limitRows) {
 	}
 }
 
-std::vector<MonitorFile> getMonitorFilesPage(
+MonitorFilePage getMonitorFilesPage(
 		ID userId,
 		const MonitorFileFilter &filter,
 		ID beforeFakeId,
@@ -798,13 +798,14 @@ std::vector<MonitorFile> getMonitorFilesPage(
 	// optional filter combinations.
 	constexpr auto kBatchSize = 500;
 	constexpr auto kMaxScanned = 20000;
-	auto page = std::vector<MonitorFile>();
+	auto result = MonitorFilePage();
 	auto cursor = beforeFakeId > 0
 		? beforeFakeId
 		: std::numeric_limits<ID>::max();
 	auto scanned = 0;
 	try {
-		while (int(page.size()) < limitRows && scanned < kMaxScanned) {
+		while (int(result.rows.size()) < limitRows
+			&& scanned < kMaxScanned) {
 			auto rows = storage.get_all<MonitorFile>(
 				where(
 					c(&MonitorFile::userId) == userId &&
@@ -812,6 +813,7 @@ std::vector<MonitorFile> getMonitorFilesPage(
 				order_by(&MonitorFile::fakeId).desc(),
 				limit(kBatchSize));
 			if (rows.empty()) {
+				result.endReached = true;
 				break;
 			}
 			scanned += int(rows.size());
@@ -829,16 +831,17 @@ std::vector<MonitorFile> getMonitorFilesPage(
 				if (filter.minVersion > 0 && row.version < filter.minVersion) {
 					continue;
 				}
-				page.push_back(row);
-				if (int(page.size()) >= limitRows) {
+				result.rows.push_back(row);
+				if (int(result.rows.size()) >= limitRows) {
 					break;
 				}
 			}
 		}
 	} catch (std::exception &ex) {
 		LOG(("Failed to get monitor file page: %1").arg(ex.what()));
+		result.endReached = true;
 	}
-	return page;
+	return result;
 }
 
 std::vector<MonitorFile> getMonitorVersions(ID userId, ID peerId, int messageId) {

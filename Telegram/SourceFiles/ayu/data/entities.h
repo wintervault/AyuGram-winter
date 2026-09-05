@@ -195,6 +195,12 @@ struct MonitorFileFilter
 	int minVersion = 0;  // 0 = any version
 };
 
+struct MonitorFilePage
+{
+	std::vector<MonitorFile> rows;
+	bool endReached = false;
+};
+
 struct MonitorTargetStats
 {
 	ID peerId = 0;

@@ -155,6 +155,12 @@ set(ayugram_files
         ayu/ui/settings/settings_filters.h
         ayu/ui/settings/settings_main.cpp
         ayu/ui/settings/settings_main.h
+        ayu/ui/monitor/monitor_center.cpp
+        ayu/ui/monitor/monitor_center.h
+        ayu/ui/monitor/monitor_center_activity.cpp
+        ayu/ui/monitor/monitor_center_activity.h
+        ayu/ui/monitor/monitor_center_targets.cpp
+        ayu/ui/monitor/monitor_center_targets.h
         ayu/ui/settings/settings_monitor.cpp
         ayu/ui/settings/settings_monitor.h
         ayu/ui/settings/settings_other.cpp

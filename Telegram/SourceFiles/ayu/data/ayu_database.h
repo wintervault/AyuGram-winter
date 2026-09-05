@@ -72,7 +72,7 @@ std::optional<ID> addMonitorFile(const MonitorFile &file);
 void updateMonitorFile(const MonitorFile &file);
 std::optional<int> getLatestFileVersion(ID userId, ID peerId, int messageId);
 std::vector<MonitorFile> getMonitorFiles(ID userId, int limit);
-std::vector<MonitorFile> getMonitorFilesPage(
+MonitorFilePage getMonitorFilesPage(
 	ID userId,
 	const MonitorFileFilter &filter,
 	ID beforeFakeId,

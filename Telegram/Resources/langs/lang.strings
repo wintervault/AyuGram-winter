@@ -9048,6 +9048,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_MonitorMinDiskSpace" = "Keep free disk space";
 "ayu_MonitorUnlimited" = "Unlimited";
 "ayu_MonitorDisabled" = "Disabled";
+"ayu_MonitorCenter" = "Monitor center";
+"ayu_MonitorCenterActivity" = "Activity";
+"ayu_MonitorCenterTargets" = "Targets";
+"ayu_MonitorCenterOpen" = "Open monitor center";
 "ayu_MonitorTypePhoto" = "Download photos";
 "ayu_MonitorTypeVideo" = "Download videos";
 "ayu_MonitorTypeVoice" = "Download voice messages";
