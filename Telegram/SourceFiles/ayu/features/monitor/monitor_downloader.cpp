@@ -37,6 +37,9 @@ void Finish(
 		return;
 	}
 	state->finished = true;
+	// Break the state -> lifetime -> subscription -> state ownership
+	// cycle; also stops stale filters from running after the finish.
+	state->lifetime.destroy();
 	const auto copy = done;
 	crl::on_main([state, copy, ok] {
 		copy(ok);
@@ -66,9 +69,10 @@ void DownloadDocument(
 		const QString &path,
 		Fn<void(bool)> done) {
 	const auto state = std::make_shared<DownloadState>();
-	// Release the queue slot and defang all pending callbacks when the
-	// session dies: the state owns every subscription, and the timeout
-	// timer checks the flag before touching the document.
+	// Releases the queue slot and defangs all pending callbacks when
+	// the session dies: the state owns every subscription, and the
+	// timeout timer and the deferred start both check the flag before
+	// touching the document.
 	session->lifetime().add([state, done] {
 		Finish(state, done, false);
 	});
@@ -81,10 +85,23 @@ void DownloadDocument(
 	});
 
 	crl::on_main([=, done = std::move(done)]() mutable {
+		if (state->finished) {
+			return;
+		}
+		if (document->loading()) {
+			// DocumentData has a single shared loader, which could be
+			// busy with a manual save; canceling it would kill that
+			// download. Fail fast instead, the queue retries later.
+			Finish(state, done, false);
+			return;
+		}
 		document->save(origin, path);
 
-		if (!document->loading() && QFile::exists(path)) {
-			Finish(state, done, QFile(path).size() == document->size);
+		// No loader after save() means the data was available locally:
+		// either the file was written or writing it failed right away.
+		if (!document->loading()) {
+			const auto file = QFile(path);
+			Finish(state, done, file.exists() && file.size() == document->size);
 			return;
 		}
 
@@ -115,6 +132,9 @@ void DownloadPhoto(
 	});
 
 	crl::on_main([=, done = std::move(done)]() mutable {
+		if (state->finished) {
+			return;
+		}
 		const auto view = photo->createMediaView();
 		if (!view) {
 			Finish(state, done, false);
@@ -122,19 +142,16 @@ void DownloadPhoto(
 		}
 		view->wanted(size, origin);
 
-		// Mirrors PhotoMedia::saveToFile, but for the resolved size:
-		// saveToFile always reads the Large slot, which stays empty for
-		// photos without a Large size.
+		// Mirrors PhotoMedia::saveToFile, but for the resolved size and
+		// without the video branch: video bytes of video-photos only
+		// exist if the user happened to preview them, while the file
+		// name and the recorded size always describe the image frame.
 		auto trySave = [=]() mutable {
 			if (!view->image(size)) {
 				return false;
 			}
 			auto ok = false;
-			if (const auto video = view->videoContent(size); !video.isEmpty()) {
-				QFile f(path);
-				ok = f.open(QIODevice::WriteOnly)
-					&& (f.write(video) == video.size());
-			} else if (const auto bytes = view->imageBytes(size); !bytes.isEmpty()) {
+			if (const auto bytes = view->imageBytes(size); !bytes.isEmpty()) {
 				QFile f(path);
 				ok = f.open(QIODevice::WriteOnly)
 					&& (f.write(bytes) == bytes.size());
@@ -149,11 +166,19 @@ void DownloadPhoto(
 			return;
 		}
 
-		session->downloaderTaskFinished(
-		) | rpl::filter([=] {
-			return view->image(size) != nullptr;
+		// Progress events fire for loads and for failures; a failed
+		// load never fills the image, so it fails the attempt instead
+		// of burning the timeout.
+		session->data().photoLoadProgress(
+		) | rpl::filter([=](not_null<PhotoData*> changed) {
+			return changed == photo
+				&& (view->image(size) != nullptr || photo->failed(size));
 		}) | rpl::take(1) | rpl::on_next([=]() mutable {
-			trySave();
+			if (view->image(size)) {
+				trySave();
+			} else {
+				Finish(state, done, false);
+			}
 		}, state->lifetime);
 	});
 }

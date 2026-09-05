@@ -62,6 +62,7 @@ rpl::lifetime &QueueLifetime() {
 // Leaked singleton: no destruction-order issues at app exit.
 QTimer &TickTimer() {
 	static const auto result = new QTimer();
+	result->setSingleShot(true);
 	return *result;
 }
 
@@ -70,21 +71,19 @@ void PumpNow();
 
 void Dispatch(Task task) {
 	++ActiveCount();
-	const auto finish = [task](bool ok) mutable {
+	// Cleared when the session dies. A dead session's failed task must
+	// never be re-queued: its pointers dangle after the teardown, and
+	// the re-queue happens after ClearSessionDownloads already ran.
+	const auto alive = std::make_shared<bool>(true);
+	const auto finish = [task, alive](bool ok) mutable {
 		--ActiveCount();
-		if (!ok && task.retries < kMaxRetries) {
+		if (!ok && *alive && task.retries < kMaxRetries) {
 			// The row is marked failed by done(ok); retry later keeps
 			// it rescueable (in-memory messages refresh file_reference
 			// automatically, deleted ones fail for good).
 			task.notBefore = crl::now() + kRetryDelays[task.retries];
 			++task.retries;
-			auto &queue = Queue();
-			const auto &path = task.path;
-			if (std::none_of(queue.begin(), queue.end(), [&](const Task &t) {
-				return t.path == path;
-			})) {
-				queue.push_back(std::move(task));
-			}
+			Queue().push_back(std::move(task));
 		} else {
 			task.done(ok);
 		}
@@ -106,6 +105,11 @@ void Dispatch(Task task) {
 			task.path,
 			finish);
 	}
+	// Registered after the download added its own guard, so on session
+	// death the flag clears before any deferred finish closure runs.
+	task.session->lifetime().add([alive] {
+		*alive = false;
+	});
 }
 
 // Coalesced entry point: dispatches must happen from a fresh event loop
