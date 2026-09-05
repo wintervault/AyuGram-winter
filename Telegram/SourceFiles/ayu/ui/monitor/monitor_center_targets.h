@@ -14,6 +14,8 @@ class SessionController;
 
 namespace MonitorCenter {
 
+// Monitored targets list: enable/disable, per-target media type filter
+// editor and removal, with per-target download stats.
 class TargetsView final : public Ui::RpWidget {
 public:
 	TargetsView(
@@ -22,6 +24,16 @@ public:
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	int resizeGetHeight(int newWidth) override;
+
+private:
+	void reload();
+	void relayout();
+
+	const not_null<Window::SessionController*> _controller;
+	class Row;
+	std::vector<object_ptr<Row>> _rows;
+	bool _loaded = false;
 
 };
 
