@@ -258,9 +258,18 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		return;
 	}
 
+	auto photoSize = std::optional<Data::PhotoSize>();
+	if (media.photo) {
+		photoSize = ResolveBestPhotoSize(media.photo);
+		if (!photoSize) {
+			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"no valid photo size"_q);
+			return;
+		}
+	}
+
 	const auto expectedSize = media.document
 		? media.document->size
-		: media.photo->imageByteSize(Data::PhotoSize::Large);
+		: media.photo->imageByteSize(*photoSize);
 	const auto maxSize = int64(settings.monitorMaxFileSizeMB()) * 1024 * 1024;
 	if (maxSize > 0 && expectedSize > maxSize) {
 		AppendEvent(userId, 1, u"skip"_q, peerId, msgId, u"oversize: %1"_q.arg(expectedSize));
@@ -339,7 +348,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	if (media.document) {
 		DownloadDocument(session, media.document, origin, path, finish);
 	} else {
-		DownloadPhoto(session, media.photo, origin, path, finish);
+		DownloadPhoto(session, media.photo, *photoSize, origin, path, finish);
 	}
 }
 

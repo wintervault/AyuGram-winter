@@ -45,6 +45,20 @@ void Finish(
 
 } // namespace
 
+std::optional<Data::PhotoSize> ResolveBestPhotoSize(
+		not_null<PhotoData*> photo) {
+	for (const auto size : {
+		Data::PhotoSize::Large,
+		Data::PhotoSize::Thumbnail,
+		Data::PhotoSize::Small,
+	}) {
+		if (photo->hasExact(size)) {
+			return size;
+		}
+	}
+	return std::nullopt;
+}
+
 void DownloadDocument(
 		not_null<Main::Session*> session,
 		not_null<DocumentData*> document,
@@ -82,6 +96,7 @@ void DownloadDocument(
 void DownloadPhoto(
 		not_null<Main::Session*> session,
 		not_null<PhotoData*> photo,
+		Data::PhotoSize size,
 		Data::FileOrigin origin,
 		const QString &path,
 		Fn<void(bool)> done) {
@@ -96,13 +111,28 @@ void DownloadPhoto(
 			Finish(state, done, false);
 			return;
 		}
-		view->wanted(Data::PhotoSize::Large, origin);
+		view->wanted(size, origin);
 
+		// Mirrors PhotoMedia::saveToFile, but for the resolved size:
+		// saveToFile always reads the Large slot, which stays empty for
+		// photos without a Large size.
 		auto trySave = [=]() mutable {
-			if (!view->loaded()) {
+			if (!view->image(size)) {
 				return false;
 			}
-			Finish(state, done, view->saveToFile(path));
+			auto ok = false;
+			if (const auto video = view->videoContent(size); !video.isEmpty()) {
+				QFile f(path);
+				ok = f.open(QIODevice::WriteOnly)
+					&& (f.write(video) == video.size());
+			} else if (const auto bytes = view->imageBytes(size); !bytes.isEmpty()) {
+				QFile f(path);
+				ok = f.open(QIODevice::WriteOnly)
+					&& (f.write(bytes) == bytes.size());
+			} else {
+				ok = view->image(size)->original().save(path, "JPG");
+			}
+			Finish(state, done, ok);
 			return true;
 		};
 
@@ -112,7 +142,7 @@ void DownloadPhoto(
 
 		session->downloaderTaskFinished(
 		) | rpl::filter([=] {
-			return view->loaded();
+			return view->image(size) != nullptr;
 		}) | rpl::take(1) | rpl::on_next([=]() mutable {
 			trySave();
 		}, state->lifetime);
