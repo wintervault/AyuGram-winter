@@ -11,13 +11,24 @@
 #include "main/main_session.h"
 
 #include <algorithm>
+#include <array>
 #include <deque>
+#include <limits>
+
+#include <QTimer>
 
 namespace AyuFeatures::Monitor {
 namespace {
 
 // Keep monitor downloads from crowding out manual ones.
 constexpr auto kMaxConcurrent = 3;
+
+constexpr auto kMaxRetries = 3;
+constexpr auto kRetryDelays = std::array<crl::time, kMaxRetries>{
+	30 * crl::time(1000),
+	2 * crl::time(60 * 1000),
+	10 * crl::time(60 * 1000),
+};
 
 struct Task {
 	not_null<Main::Session*> session;
@@ -27,6 +38,10 @@ struct Task {
 	Data::FileOrigin origin;
 	QString path;
 	Fn<void(bool)> done;
+
+	// Retry bookkeeping: tasks wait in the queue until notBefore.
+	int retries = 0;
+	crl::time notBefore = 0;
 };
 
 std::deque<Task> &Queue() {
@@ -44,35 +59,88 @@ rpl::lifetime &QueueLifetime() {
 	return result;
 }
 
+// Leaked singleton: no destruction-order issues at app exit.
+QTimer &TickTimer() {
+	static const auto result = new QTimer();
+	return *result;
+}
+
+void Pump();
+void PumpNow();
+
+void Dispatch(Task task) {
+	++ActiveCount();
+	const auto finish = [task](bool ok) mutable {
+		--ActiveCount();
+		if (!ok && task.retries < kMaxRetries) {
+			// The row is marked failed by done(ok); retry later keeps
+			// it rescueable (in-memory messages refresh file_reference
+			// automatically, deleted ones fail for good).
+			task.notBefore = crl::now() + kRetryDelays[task.retries];
+			++task.retries;
+			auto &queue = Queue();
+			const auto &path = task.path;
+			if (std::none_of(queue.begin(), queue.end(), [&](const Task &t) {
+				return t.path == path;
+			})) {
+				queue.push_back(std::move(task));
+			}
+		} else {
+			task.done(ok);
+		}
+		Pump();
+	};
+	if (task.document) {
+		DownloadDocument(
+			task.session,
+			task.document,
+			task.origin,
+			task.path,
+			finish);
+	} else {
+		DownloadPhoto(
+			task.session,
+			task.photo,
+			task.photoSize,
+			task.origin,
+			task.path,
+			finish);
+	}
+}
+
+// Coalesced entry point: dispatches must happen from a fresh event loop
+// iteration, so a dying session always finishes teardown first (its
+// ClearSessionDownloads runs on the same destruction stack as the
+// finish callbacks that call this) and never gets new dispatches.
 void Pump() {
+	crl::on_main([] {
+		PumpNow();
+	});
+}
+
+void PumpNow() {
 	auto &queue = Queue();
 	auto &active = ActiveCount();
 	const auto paused = AyuSettings::getInstance().monitorPaused();
+	const auto now = crl::now();
+	const auto due = [&](const Task &task) {
+		return task.notBefore <= now;
+	};
 	while (!paused && active < kMaxConcurrent && !queue.empty()) {
-		auto task = std::move(queue.front());
-		queue.pop_front();
-		++active;
-		const auto finish = [done = std::move(task.done)](bool ok) mutable {
-			--ActiveCount();
-			done(ok);
-			Pump();
-		};
-		if (task.document) {
-			DownloadDocument(
-				task.session,
-				task.document,
-				task.origin,
-				task.path,
-				finish);
-		} else {
-			DownloadPhoto(
-				task.session,
-				task.photo,
-				task.photoSize,
-				task.origin,
-				task.path,
-				finish);
+		const auto it = std::find_if(queue.begin(), queue.end(), due);
+		if (it == queue.end()) {
+			auto earliest = queue.front().notBefore;
+			for (const auto &task : queue) {
+				earliest = std::min(earliest, task.notBefore);
+			}
+			TickTimer().start(int(std::min<crl::time>(
+				earliest - now,
+				std::numeric_limits<int>::max())));
+			break;
 		}
+		auto task = std::move(*it);
+		queue.erase(it);
+		Dispatch(std::move(task));
 	}
 }
 
@@ -82,6 +150,9 @@ void EnsureInitialized() {
 		return;
 	}
 	initialized = true;
+	QObject::connect(&TickTimer(), &QTimer::timeout, [] {
+		Pump();
+	});
 	AyuSettings::getInstance().monitorPausedValue()
 	| rpl::filter([=](bool paused) {
 		return !paused;
@@ -131,6 +202,7 @@ void EnqueuePhotoDownload(
 	Pump();
 }
 
+// Also drops not-yet-dispatched retries, they live in the same queue.
 void ClearSessionDownloads(not_null<Main::Session*> session) {
 	auto &queue = Queue();
 	queue.erase(
