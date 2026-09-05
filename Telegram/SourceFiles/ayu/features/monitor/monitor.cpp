@@ -56,6 +56,10 @@ QString ResolveSaveRoot() {
 	return root;
 }
 
+QString DefaultNameTemplate() {
+	return u"{chat_title}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
+}
+
 namespace {
 
 struct PendingMedia {
@@ -67,7 +71,9 @@ struct PendingMedia {
 };
 
 [[nodiscard]] QString SanitizeNamePart(QString part) {
-	static const auto invalid = QRegularExpression(u"[\\\\/:*?\"<>|]+"_q);
+	// Braces are stripped so that substituted values can never inject
+	// template placeholders of their own.
+	static const auto invalid = QRegularExpression(u"[\\\\/:*?\"<>|{}]+"_q);
 	return part.replace(invalid, u"_"_q).trimmed();
 }
 
@@ -206,35 +212,73 @@ void AppendEvent(
 }
 
 [[nodiscard]] QString BuildFilePath(not_null<HistoryItem*> item, int version) {
-	const auto peerName = SanitizeNamePart(item->history()->peer->name());
-	const auto date = base::unixtime::parse(item->date()).date().toString(u"yyyy-MM-dd"_q);
-	const auto root = ResolveSaveRoot();
-	const auto dir = root + peerName + '/' + date + '/';
+	const auto &settings = AyuSettings::getInstance();
+	auto templ = settings.monitorNameTemplate();
+	if (templ.trimmed().isEmpty()) {
+		templ = DefaultNameTemplate();
+	}
+	templ.replace('\\', '/');
 
-	auto baseName = QString();
-	if (const auto pending = ExtractMedia(item); pending.has_value()) {
-		const auto &media = *pending;
-		if (media.document) {
-			baseName = media.document->filename();
-			if (baseName.isEmpty()) {
-				baseName = u"file_%1"_q.arg(media.mediaId);
-			}
-		} else {
-			baseName = u"photo_%1.jpg"_q.arg(media.mediaId);
+	const auto pending = ExtractMedia(item);
+	if (!pending.has_value()) {
+		return QString();
+	}
+	const auto &media = *pending;
+
+	auto origName = QString();
+	if (media.document) {
+		origName = media.document->filename();
+		if (origName.isEmpty()) {
+			origName = u"file_%1"_q.arg(media.mediaId);
 		}
 	} else {
+		origName = u"photo_%1.jpg"_q.arg(media.mediaId);
+	}
+	const auto origInfo = QFileInfo(origName);
+	const auto date = base::unixtime::parse(item->date()).date().toString(u"yyyy-MM-dd"_q);
+
+	auto relative = std::move(templ);
+	const auto vars = std::vector<std::pair<QString, QString>>{
+		{ u"chat_title"_q, SanitizeNamePart(item->history()->peer->name()) },
+		{ u"chat_id"_q, QString::number(item->history()->peer->id.value & PeerId::kChatTypeMask) },
+		{ u"topic_id"_q, QString::number(item->topicRootId().bare) },
+		{ u"msg_id"_q, QString::number(item->id.bare) },
+		{ u"media_id"_q, QString::number(media.mediaId) },
+		{ u"type"_q, TypeName(media.type) },
+		{ u"ext"_q, origInfo.suffix() },
+		{ u"orig_name"_q, SanitizeNamePart(origName) },
+		{ u"date"_q, date },
+		{ u"yyyy-MM-dd"_q, date },
+	};
+	for (const auto &[key, value] : vars) {
+		relative.replace('{' + key + '}', value);
+	}
+
+	// Split into segments, dropping traversal and empty ones.
+	auto segments = relative.split('/', Qt::SkipEmptyParts);
+	for (auto &segment : segments) {
+		segment = SanitizeNamePart(segment);
+	}
+	segments.removeAll(u"."_q);
+	segments.removeAll(u".."_q);
+	if (segments.isEmpty()) {
 		return QString();
 	}
 
-	const auto info = QFileInfo(baseName);
-	auto name = u"%1_%2"_q.arg(item->id.bare).arg(info.completeBaseName());
+	// Version suffix goes before the final file name extension.
 	if (version > 1) {
-		name += u"_v%1"_q.arg(version);
+		const auto info = QFileInfo(segments.back());
+		const auto base = info.completeBaseName();
+		if (base.isEmpty()) {
+			segments.back() = info.fileName() + u"_v%1"_q.arg(version);
+		} else {
+			segments.back() = base
+				+ u"_v%1"_q.arg(version)
+				+ (info.suffix().isEmpty() ? QString() : u'.' + info.suffix());
+		}
 	}
-	if (!info.suffix().isEmpty()) {
-		name += u'.' + info.suffix();
-	}
-	return dir + name;
+
+	return ResolveSaveRoot() + segments.join('/');
 }
 
 void EnsureMediaDownloaded(not_null<HistoryItem*> item) {

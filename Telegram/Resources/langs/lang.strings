@@ -9041,6 +9041,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_MonitorSavePathDefault" = "Default (app data folder)";
 "ayu_MonitorChoosePath" = "Choose folder";
 "ayu_MonitorOpenDownloads" = "Open downloads folder";
+"ayu_MonitorNameTemplate" = "File name template";
+"ayu_MonitorNameTemplatePlaceholder" = "Path template relative to the save root";
+"ayu_MonitorNameTemplateVars" = "Variables in curly braces: chat_title, chat_id, topic_id, msg_id, media_id, type, ext, orig_name, date (yyyy-MM-dd). An empty template resets to the default.";
 "ayu_MonitorTypePhoto" = "Download photos";
 "ayu_MonitorTypeVideo" = "Download videos";
 "ayu_MonitorTypeVoice" = "Download voice messages";

@@ -1087,6 +1087,12 @@ void AyuSettings::setMonitorSaveRoot(const QString &val) {
 	save();
 }
 
+void AyuSettings::setMonitorNameTemplate(const QString &val) {
+	if (_monitorNameTemplate.current() == val) return;
+	_monitorNameTemplate = val;
+	save();
+}
+
 void AyuSettings::setMonitorDownloadPhoto(bool val) {
 	if (_monitorDownloadPhoto.current() == val) return;
 	_monitorDownloadPhoto = val;
@@ -1234,6 +1240,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"monitorEnabled", s._monitorEnabled.current()},
 		{"monitorPaused", s._monitorPaused.current()},
 		{"monitorSaveRoot", s._monitorSaveRoot.current().toStdString()},
+		{"monitorNameTemplate", s._monitorNameTemplate.current().toStdString()},
 		{"monitorDownloadPhoto", s._monitorDownloadPhoto.current()},
 		{"monitorDownloadVideo", s._monitorDownloadVideo.current()},
 		{"monitorDownloadVoice", s._monitorDownloadVoice.current()},
@@ -1350,6 +1357,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._monitorEnabled = j.value("monitorEnabled", defaults._monitorEnabled.current());
 	s._monitorPaused = j.value("monitorPaused", defaults._monitorPaused.current());
 	s._monitorSaveRoot = QString::fromStdString(j.value("monitorSaveRoot", defaults._monitorSaveRoot.current().toStdString()));
+	s._monitorNameTemplate = QString::fromStdString(j.value("monitorNameTemplate", defaults._monitorNameTemplate.current().toStdString()));
 	s._monitorDownloadPhoto = j.value("monitorDownloadPhoto", defaults._monitorDownloadPhoto.current());
 	s._monitorDownloadVideo = j.value("monitorDownloadVideo", defaults._monitorDownloadVideo.current());
 	s._monitorDownloadVoice = j.value("monitorDownloadVoice", defaults._monitorDownloadVoice.current());

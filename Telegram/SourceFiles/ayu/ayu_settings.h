@@ -357,6 +357,7 @@ public:
 	[[nodiscard]] bool monitorEnabled() const { return _monitorEnabled.current(); }
 	[[nodiscard]] bool monitorPaused() const { return _monitorPaused.current(); }
 	[[nodiscard]] QString monitorSaveRoot() const { return _monitorSaveRoot.current(); }
+	[[nodiscard]] QString monitorNameTemplate() const { return _monitorNameTemplate.current(); }
 	[[nodiscard]] bool monitorDownloadPhoto() const { return _monitorDownloadPhoto.current(); }
 	[[nodiscard]] bool monitorDownloadVideo() const { return _monitorDownloadVideo.current(); }
 	[[nodiscard]] bool monitorDownloadVoice() const { return _monitorDownloadVoice.current(); }
@@ -372,6 +373,7 @@ public:
 	void setMonitorEnabled(bool val);
 	void setMonitorPaused(bool val);
 	void setMonitorSaveRoot(const QString &val);
+	void setMonitorNameTemplate(const QString &val);
 	void setMonitorDownloadPhoto(bool val);
 	void setMonitorDownloadVideo(bool val);
 	void setMonitorDownloadVoice(bool val);
@@ -742,6 +744,7 @@ private:
 	rpl::variable<bool> _monitorEnabled = false;
 	rpl::variable<bool> _monitorPaused = false;
 	rpl::variable<QString> _monitorSaveRoot;
+	rpl::variable<QString> _monitorNameTemplate = u"{chat_title}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
 	rpl::variable<bool> _monitorDownloadPhoto = true;
 	rpl::variable<bool> _monitorDownloadVideo = true;
 	rpl::variable<bool> _monitorDownloadVoice = true;

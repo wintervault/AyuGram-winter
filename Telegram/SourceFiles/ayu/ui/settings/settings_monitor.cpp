@@ -19,11 +19,16 @@
 #include "main/main_session.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
+#include "styles/style_boxes.h"
+#include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/labels.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
 
@@ -102,6 +107,43 @@ void BuildMonitorToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 }
 
+void EditMonitorTemplateBox(not_null<Ui::GenericBox*> box) {
+	box->setTitle(tr::ayu_MonitorNameTemplate());
+
+	const auto input = box->addRow(
+		object_ptr<Ui::InputField>(
+			box->verticalLayout(),
+			st::defaultInputField,
+			Ui::InputField::Mode::MultiLine,
+			tr::ayu_MonitorNameTemplatePlaceholder()),
+		st::markdownLinkFieldPadding);
+	const auto current = AyuSettings::getInstance().monitorNameTemplate();
+	input->setText(current.trimmed().isEmpty()
+		? AyuFeatures::Monitor::DefaultNameTemplate()
+		: current);
+
+	box->addRow(
+		object_ptr<Ui::FlatLabel>(
+			box->verticalLayout(),
+			tr::ayu_MonitorNameTemplateVars(tr::rich),
+			st::boxDividerLabel),
+		st::settingsCheckboxPadding);
+
+	const auto save = [=] {
+		AyuSettings::getInstance().setMonitorNameTemplate(
+			input->getTextWithTags().text.trimmed());
+		box->closeBox();
+	};
+	input->submits() | rpl::on_next(save, input->lifetime());
+	box->addButton(tr::lng_settings_save(), save);
+	box->addButton(tr::lng_cancel(), [=] {
+		box->closeBox();
+	});
+	box->setFocusCallback([=] {
+		input->setFocusFast();
+	});
+}
+
 void BuildMonitorPaths(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 
@@ -117,6 +159,14 @@ void BuildMonitorPaths(SectionBuilder &builder) {
 				[=](QString &&result) {
 					AyuSettings::getInstance().setMonitorSaveRoot(result);
 				});
+		},
+	});
+	builder.addButton({
+		.id = u"ayu/monitorNameTemplate"_q,
+		.title = tr::ayu_MonitorNameTemplate(),
+		.icon = { &st::menuIconEdit },
+		.onClick = [=] {
+			controller->show(Box(EditMonitorTemplateBox));
 		},
 	});
 	builder.addButton({
