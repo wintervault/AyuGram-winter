@@ -255,6 +255,7 @@ void BuildMonitorDanger(SectionBuilder &builder) {
 							target.peerId,
 							target.topicId);
 					}
+					AyuFeatures::Monitor::InvalidateTargetsCache();
 					close();
 				},
 				.confirmText = tr::lng_box_yes(),

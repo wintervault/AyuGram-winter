@@ -16,6 +16,7 @@ namespace AyuFeatures::Monitor {
 
 [[nodiscard]] QString ResolveSaveRoot();
 [[nodiscard]] QString DefaultNameTemplate();
+void InvalidateTargetsCache();
 
 void SubscribeSession(not_null<Main::Session*> session);
 void HandleEditPreApply(not_null<HistoryItem*> item);

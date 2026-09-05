@@ -787,8 +787,15 @@ std::vector<MonitorFile> getMonitorFiles(ID userId, int limitRows) {
 
 void addMonitorEvent(const MonitorEvent &event) {
 	constexpr auto kMaxEvents = 500;
+	// Trimming scans the table, so only do it once in a while; the cap
+	// is soft and can lag a little behind.
+	static auto sinceTrim = 0;
 	try {
 		storage.insert(event);
+		if (++sinceTrim < 32) {
+			return;
+		}
+		sinceTrim = 0;
 		const auto keep = storage.select(&MonitorEvent::fakeId,
 			order_by(&MonitorEvent::fakeId).desc(),
 			limit(kMaxEvents));

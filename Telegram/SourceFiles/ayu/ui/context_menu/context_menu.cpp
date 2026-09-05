@@ -13,6 +13,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
 #include "ayu/data/ayu_database.h"
+#include "ayu/features/monitor/monitor.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
@@ -460,6 +461,7 @@ void AddMonitorAction(PeerData *peerData,
 				target.addedDate = base::unixtime::now();
 				AyuDatabase::Monitor::upsertMonitorTarget(target);
 			}
+			AyuFeatures::Monitor::InvalidateTargetsCache();
 		},
 		&st::menuIconDownload);
 }

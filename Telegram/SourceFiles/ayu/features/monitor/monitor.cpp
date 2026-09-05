@@ -146,14 +146,20 @@ struct PendingMedia {
 	return u"other"_q;
 }
 
+struct TargetsCache {
+	ID userId = 0;
+	std::vector<MonitorTarget> targets;
+	crl::time fetched = 0;
+};
+
+TargetsCache &TargetsCacheInstance() {
+	static TargetsCache result;
+	return result;
+}
+
 [[nodiscard]] std::vector<MonitorTarget> GetTargetsCached(ID userId) {
-	struct Cache {
-		ID userId = 0;
-		std::vector<MonitorTarget> targets;
-		crl::time fetched = 0;
-	};
-	static Cache cache;
 	constexpr auto kTtl = 5 * crl::time(1000);
+	auto &cache = TargetsCacheInstance();
 	const auto now = crl::now();
 	if (cache.userId == userId && now - cache.fetched < kTtl) {
 		return cache.targets;
@@ -298,7 +304,7 @@ void AppendEvent(
 		{ u"msg_id"_q, QString::number(item->id.bare) },
 		{ u"media_id"_q, QString::number(media.mediaId) },
 		{ u"type"_q, TypeName(media.type) },
-		{ u"ext"_q, origInfo.suffix() },
+		{ u"ext"_q, SanitizeNamePart(origInfo.suffix()) },
 		{ u"orig_name"_q, SanitizeNamePart(origName) },
 		{ u"date"_q, date },
 		{ u"yyyy-MM-dd"_q, date },
@@ -338,16 +344,26 @@ void AppendEvent(
 	}
 
 	constexpr auto kMaxPathLen = 240;
-	const auto keep = kMaxPathLen
+	auto keep = kMaxPathLen
 		- dirPart.size()
 		- ext.size()
 		- versionTag.size()
 		- 5; // room for the short hash appended after truncation
-	if (keep > 0 && base.size() > keep) {
+	if (keep < 1) {
+		// The directory part alone busts the budget; still keep a sane
+		// file name, the download fails later if the path is too long.
+		keep = 1;
+	}
+	if (base.size() > keep) {
+		base = base.left(keep);
+		if (base.at(base.size() - 1).isHighSurrogate()) {
+			// Don't split a surrogate pair.
+			base.chop(1);
+		}
 		const auto digest = QCryptographicHash::hash(
 			base.toUtf8(),
 			QCryptographicHash::Md5).toHex().left(4);
-		base = base.left(keep) + u"_%1"_q.arg(QString::fromLatin1(digest));
+		base += u"_%1"_q.arg(QString::fromLatin1(digest));
 	}
 	segments.back() = base + versionTag + ext;
 	return dirPart + segments.back();
@@ -371,7 +387,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	const auto origin = item->fullId();
 
 	if (!TypeAllowed(media.type)) {
-		AppendEvent(userId, 0, u"skip"_q, peerId, msgId, u"type disabled: %1"_q.arg(TypeName(media.type)));
+		// Global toggles are visible in the settings, no event spam.
 		return;
 	}
 	if (!TargetAllowsType(userId, peerId, item->topicRootId().bare, media.type)) {
@@ -399,7 +415,11 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 
 	const auto minFreeBytes = int64(settings.monitorMinDiskSpaceMB()) * 1024 * 1024;
 	if (minFreeBytes > 0) {
-		const auto storage = QStorageInfo(ResolveSaveRoot());
+		const auto root = ResolveSaveRoot();
+		if (!QFileInfo::exists(root)) {
+			QDir().mkpath(root);
+		}
+		const auto storage = QStorageInfo(root);
 		const auto available = storage.bytesAvailable();
 		if (storage.isValid() && available >= 0 && available < minFreeBytes) {
 			AppendEvent(
@@ -468,6 +488,13 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	const auto path = QString::fromStdString(row->filePath);
 	const auto finish = [=](bool ok) {
 		if (auto existing = AyuDatabase::Monitor::getMonitorFileById(userId, rowId)) {
+			if (!ok
+				&& existing->status == int(MonitorFileStatus::done)
+				&& QFileInfo::exists(path)) {
+				// A sibling task for this row already completed, don't
+				// downgrade the row over its finished file.
+				return;
+			}
 			existing->status = int(ok ? MonitorFileStatus::done : MonitorFileStatus::failed);
 			existing->errorInfo = ok ? "" : "download failed";
 			existing->downloadedDate = base::unixtime::now();
@@ -490,6 +517,13 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 }
 
 } // namespace
+
+void InvalidateTargetsCache() {
+	auto &cache = TargetsCacheInstance();
+	cache.userId = 0;
+	cache.targets.clear();
+	cache.fetched = 0;
+}
 
 void SubscribeSession(not_null<Main::Session*> session) {
 	session->lifetime().add([=] {
