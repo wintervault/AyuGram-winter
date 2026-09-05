@@ -6,19 +6,494 @@
 // Copyright @Radolyn, 2026
 #include "ayu/ui/monitor/monitor_center_activity.h"
 
+#include "ayu/data/ayu_database.h"
+#include "ayu/data/entities.h"
+#include "ayu/ui/monitor/monitor_center.h"
+#include "base/unixtime.h"
+#include "base/unique_qptr.h"
+#include "core/file_utilities.h"
+#include "data/data_peer_id.h"
+#include "data/data_session.h"
+#include "lang/lang_keys.h"
+#include "main/main_session.h"
+#include "styles/style_boxes.h"
+#include "styles/style_window.h"
+#include "ui/painter.h"
+#include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
 
+#include <QDesktopServices>
+#include <QFileInfo>
+#include <QUrl>
+#include <map>
+
 namespace MonitorCenter {
+namespace {
+
+constexpr auto kPageSize = 50;
+
+constexpr auto kTilesHeight = 64;
+constexpr auto kFiltersHeight = 44;
+constexpr auto kTopPad = 6;
+constexpr auto kGroupHeaderHeight = 32;
+constexpr auto kVersionHeight = 24;
+constexpr auto kGroupPad = 14;
+constexpr auto kBottomPad = 24;
+
+constexpr auto kStatusDone = 0;
+constexpr auto kStatusPending = 1;
+constexpr auto kStatusFailed = 2;
+
+[[nodiscard]] QString TimeText(int unixtime) {
+	return base::unixtime::parse(unixtime).time().toString(u"HH:mm"_q);
+}
+
+[[nodiscard]] QString DateText(int unixtime) {
+	return base::unixtime::parse(unixtime).date().toString(u"MM-dd HH:mm"_q);
+}
+
+[[nodiscard]] QString StatusText(const MonitorFile &file, int *color) {
+	if (file.status == int(MonitorFileStatus::done)) {
+		*color = kStatusDone;
+		return TimeText(file.downloadedDate);
+	} else if (file.status == int(MonitorFileStatus::failed)) {
+		*color = kStatusFailed;
+		return u"Failed"_q;
+	}
+	*color = kStatusPending;
+	return u"Pending"_q;
+}
+
+} // namespace
 
 ActivityView::ActivityView(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
-: Ui::RpWidget(parent) {
+: Ui::RpWidget(parent)
+, _controller(controller) {
+	_typeOptions = { u"All"_q };
+	const auto names = {
+		u"Photo"_q,
+		u"Video"_q,
+		u"Voice"_q,
+		u"Audio"_q,
+		u"Video note"_q,
+		u"GIF"_q,
+		u"Document"_q,
+	};
+	const auto types = {
+		std::string("photo"),
+		std::string("video"),
+		std::string("voice"),
+		std::string("audio"),
+		std::string("video_note"),
+		std::string("gif"),
+		std::string("document"),
+	};
+	auto nameIt = names.begin();
+	for (const auto &type : types) {
+		_typeNames.push_back(QString::fromStdString(type));
+		_typeOptions.push_back(*nameIt);
+		++nameIt;
+	}
+	_statusOptions = {
+		u"All"_q,
+		u"Downloading"_q,
+		u"Done"_q,
+		u"Failed"_q,
+		u"Replaced"_q,
+	};
+
+	refreshStats();
+	loadPage();
+}
+
+void ActivityView::refreshStats() {
+	const auto session = &_controller->session();
+	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
+	const auto now = base::unixtime::now();
+	const auto dayStart = now - (now % 86400);
+	const auto stats = AyuDatabase::Monitor::getGlobalStats(userId, dayStart);
+
+	_activeTile = u"\xE2\x80\x93"_q;
+	_todayTile = u"+%1 \xC2\xB7 %2"_q
+		.arg(stats.todayCount)
+		.arg(MonitorFormatBytes(stats.todayBytes));
+	_totalTile = u"%1 \xC2\xB7 %2"_q
+		.arg(stats.totalCount)
+		.arg(MonitorFormatBytes(stats.totalBytes));
+	_failedTile = (stats.failedCount > 0)
+		? QString::number(stats.failedCount)
+		: u"\xE2\x80\x93"_q;
+	_failedCount = stats.failedCount;
+
+	// Target filter options: all monitored targets plus any target that
+	// has downloads.
+	auto seen = std::map<long long, QString>();
+	for (const auto &target : AyuDatabase::Monitor::getAllMonitorTargets(userId)) {
+		seen.emplace(target.peerId, MonitorPeerName(_controller, target.peerId));
+	}
+	for (const auto &targetStats : AyuDatabase::Monitor::getTargetStats(userId)) {
+		seen.emplace(targetStats.peerId, MonitorPeerName(_controller, targetStats.peerId));
+	}
+	_targetOptions.clear();
+	_targetOptions.emplace_back(0, u"All targets"_q);
+	for (const auto &[peerId, name] : seen) {
+		_targetOptions.emplace_back(peerId, name);
+	}
+	update();
+}
+
+void ActivityView::loadPage() {
+	if (_loading || _endReached) {
+		return;
+	}
+	_loading = true;
+	const auto session = &_controller->session();
+	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
+
+	auto filter = MonitorFileFilter();
+	filter.peerId = _targetOptions[_targetFilter].first;
+	filter.type = (_typeFilter > 0)
+		? _typeNames[_typeFilter - 1].toStdString()
+		: std::string();
+	switch (_statusFilter) {
+	case 1: filter.status = int(MonitorFileStatus::pending); break;
+	case 2: filter.status = int(MonitorFileStatus::done); break;
+	case 3: filter.status = int(MonitorFileStatus::failed); break;
+	case 4: filter.minVersion = 2; break;
+	default: break;
+	}
+
+	const auto page = AyuDatabase::Monitor::getMonitorFilesPage(
+		userId,
+		filter,
+		_oldestFakeId,
+		kPageSize);
+	_endReached = page.endReached;
+	if (!page.rows.empty()) {
+		_oldestFakeId = page.rows.back().fakeId;
+
+		// Merge rows into groups by (peerId, messageId), loading the
+		// full version list of every message (index-backed query).
+		auto current = std::optional<Group>();
+		for (const auto &row : page.rows) {
+			if (current.has_value()
+				&& current->peerId == row.peerId
+				&& current->messageId == row.messageId) {
+				// Versions are already complete from the first row.
+				continue;
+			}
+			if (current.has_value()) {
+				_groups.push_back(std::move(*current));
+			}
+			auto group = Group();
+			group.peerId = row.peerId;
+			group.messageId = row.messageId;
+			const auto versions = AyuDatabase::Monitor::getMonitorVersions(
+				userId,
+				row.peerId,
+				row.messageId);
+			for (const auto &version : versions) {
+				auto line = VersionRow();
+				line.fakeId = version.fakeId;
+				line.name = QFileInfo(
+					QString::fromStdString(version.filePath)).fileName();
+				line.meta = u"v%1 \xC2\xB7 %2 \xC2\xB7 %3"_q
+					.arg(version.version)
+					.arg(MonitorFormatBytes(version.fileSize))
+					.arg(TimeText(version.downloadedDate));
+				line.done = (version.status == int(MonitorFileStatus::done));
+				line.status = StatusText(version, &line.statusColor);
+				line.path = QString::fromStdString(version.filePath);
+				group.rows.push_back(std::move(line));
+			}
+			group.header = MonitorPeerName(_controller, row.peerId)
+				+ u"  \xC2\xB7  #%1"_q.arg(row.messageId);
+			current = std::move(group);
+		}
+		if (current.has_value()) {
+			_groups.push_back(std::move(*current));
+		}
+	}
+	_loading = false;
+	resizeToWidth(width());
+	update();
+}
+
+void ActivityView::checkLoadMore(int scrollTop, int viewportHeight) {
+	if (!_loading
+		&& !_endReached
+		&& scrollTop + viewportHeight > _contentHeight - 400) {
+		loadPage();
+	}
+}
+
+int ActivityView::resizeGetHeight(int newWidth) {
+	auto y = kTopPad;
+	for (auto &group : _groups) {
+		group.top = y;
+		group.height = kGroupHeaderHeight
+			+ int(group.rows.size()) * kVersionHeight
+			+ kGroupPad;
+		y += group.height;
+	}
+	_contentHeight = y + kBottomPad
+		+ (_endReached ? 0 : kGroupHeaderHeight);
+	return _contentHeight;
 }
 
 void ActivityView::paintEvent(QPaintEvent *e) {
-	QPainter p(this);
-	p.fillRect(e->rect(), st::boxBg);
+	auto p = QPainter(this);
+	const auto w = width();
+
+	// Tiles row.
+	const auto tileWidth = w / 4;
+	const auto captions = {
+		u"Active / Queue"_q,
+		u"Today"_q,
+		u"Total"_q,
+		u"Failed"_q,
+	};
+	const auto values = {
+		_activeTile,
+		_todayTile,
+		_totalTile,
+		_failedTile,
+	};
+	auto captionIt = captions.begin();
+	auto valueIt = values.begin();
+	for (auto i = 0; i != 4; ++i, ++captionIt, ++valueIt) {
+		const auto left = i * tileWidth;
+		p.setFont(st::semiboldFont);
+		p.setPen(st::windowFg);
+		p.drawText(
+			QRect(left, 8, tileWidth, st::semiboldFont->height),
+			style::al_top,
+			*valueIt);
+		p.setFont(st::normalFont);
+		p.setPen(st::windowSubTextFg);
+		p.drawText(
+			QRect(
+				left,
+				8 + st::semiboldFont->height + 2,
+				tileWidth,
+				st::normalFont->height),
+			style::al_top,
+			*captionIt);
+		if (i > 0) {
+			p.fillRect(left, 12, 1, kTilesHeight - 24, st::shadowFg);
+		}
+	}
+	p.fillRect(0, kTilesHeight - 1, w, 1, st::shadowFg);
+
+	// Filter chips.
+	const auto chips = std::vector<QString>{
+		u"Target: "_q + _targetOptions[_targetFilter].second,
+		u"Type: "_q + _typeOptions[_typeFilter],
+		u"Status: "_q + _statusOptions[_statusFilter],
+	};
+	const auto metrics = QFontMetrics(st::normalFont);
+	const auto chipY = kTilesHeight + (kFiltersHeight - 28) / 2;
+	auto chipLeft = 16;
+	for (const auto &chip : chips) {
+		const auto chipWidth = metrics.horizontalAdvance(chip) + 24;
+		{
+			const auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::windowBgOver);
+			p.drawRoundedRect(chipLeft, chipY, chipWidth, 28, 8, 8);
+		}
+		p.setPen(st::windowFg);
+		p.drawText(
+			QRect(chipLeft, chipY, chipWidth, 28),
+			style::al_center,
+			chip);
+		chipLeft += chipWidth + 10;
+	}
+
+	// Groups.
+	const auto listTop = kTilesHeight + kFiltersHeight;
+	auto y = listTop;
+	if (_groups.empty()) {
+		p.setFont(st::normalFont);
+		p.setPen(st::windowSubTextFg);
+		p.drawText(
+			QRect(0, y, w, height() - y),
+			style::al_center,
+			_loading ? u"Loading..."_q : u"No downloads yet"_q);
+		return;
+	}
+	const auto versionMetrics = QFontMetrics(st::normalFont);
+	for (const auto &group : _groups) {
+		p.setFont(st::semiboldFont);
+		p.setPen(st::windowFg);
+		p.drawText(
+			16,
+			group.top + kGroupHeaderHeight / 2 + st::semiboldFont->height / 2
+				- st::semiboldFont->descent,
+			group.header);
+		if (group.rows.size() > 1) {
+			p.setFont(st::normalFont);
+			p.setPen(st::windowSubTextFg);
+			const auto count = u"%1 versions"_q.arg(group.rows.size());
+			p.drawText(
+				w - 16 - versionMetrics.horizontalAdvance(count),
+				group.top + kGroupHeaderHeight / 2 + st::normalFont->height / 2
+					- st::normalFont->descent,
+				count);
+		}
+
+		auto rowY = group.top + kGroupHeaderHeight;
+		for (const auto &row : group.rows) {
+			const auto dotColor = (row.statusColor == kStatusDone)
+				? st::windowActiveTextFg
+				: (row.statusColor == kStatusFailed)
+				? st::boxTextFgError
+				: st::windowSubTextFg;
+			p.setPen(Qt::NoPen);
+			p.setBrush(dotColor);
+			p.drawEllipse(24, rowY + kVersionHeight / 2 - 3, 6, 6);
+
+			p.setFont(st::normalFont);
+			p.setPen(st::windowFg);
+			p.drawText(
+				40,
+				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+					- st::normalFont->descent,
+				row.name);
+			p.setPen(st::windowSubTextFg);
+			p.drawText(
+				w - 16 - versionMetrics.horizontalAdvance(row.meta),
+				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+					- st::normalFont->descent,
+				row.meta);
+			rowY += kVersionHeight;
+		}
+
+		p.fillRect(
+			16,
+			group.top + group.height - kGroupPad / 2 - 1,
+			w - 32,
+			1,
+			st::shadowFg);
+		y = group.top + group.height;
+	}
+
+	if (!_endReached) {
+		p.setFont(st::normalFont);
+		p.setPen(st::windowSubTextFg);
+		p.drawText(
+			QRect(0, y, w, kGroupHeaderHeight),
+			style::al_center,
+			u"Loading more..."_q);
+	}
+}
+
+std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
+	if (pos.y() < kTilesHeight + kFiltersHeight) {
+		return std::nullopt;
+	}
+	for (auto g = 0; g != int(_groups.size()); ++g) {
+		const auto &group = _groups[g];
+		if (pos.y() < group.top) {
+			continue;
+		}
+		if (pos.y() >= group.top + group.height) {
+			continue;
+		}
+		const auto index = (pos.y() - group.top - kGroupHeaderHeight)
+			/ kVersionHeight;
+		if (index >= 0 && index < int(group.rows.size())) {
+			return g * 1000 + index;
+		}
+		return std::nullopt;
+	}
+	return std::nullopt;
+}
+
+void ActivityView::showFileMenu(QPoint globalPos, const VersionRow &row) {
+	if (!row.done || !QFileInfo::exists(row.path)) {
+		return;
+	}
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	_menu->addAction(u"Open"_q, [=] {
+		QDesktopServices::openUrl(QUrl::fromLocalFile(row.path));
+	});
+	_menu->addAction(
+		tr::lng_context_show_in_folder(tr::now),
+		[=] {
+			File::ShowInFolder(row.path);
+		});
+	_menu->popup(globalPos);
+}
+
+void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
+	auto menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	const auto select = [=, this](int index) {
+		if (chipIndex == 0) {
+			_targetFilter = index;
+		} else if (chipIndex == 1) {
+			_typeFilter = index;
+		} else {
+			_statusFilter = index;
+		}
+		_groups.clear();
+		_oldestFakeId = 0;
+		_endReached = false;
+		loadPage();
+	};
+	if (chipIndex == 0) {
+		for (auto i = 0; i != int(_targetOptions.size()); ++i) {
+			const auto index = i;
+			menu->addAction(_targetOptions[i].second, [=] {
+				select(index);
+			});
+		}
+	} else {
+		const auto &options = (chipIndex == 1) ? _typeOptions : _statusOptions;
+		for (auto i = 0; i != int(options.size()); ++i) {
+			const auto index = i;
+			menu->addAction(options[i], [=] {
+				select(index);
+			});
+		}
+	}
+	menu->popup(globalPos);
+}
+
+void ActivityView::mousePressEvent(QMouseEvent *e) {
+	const auto pos = e->pos();
+	const auto globalPos = e->globalPos();
+	const auto chipY = kTilesHeight + (kFiltersHeight - 28) / 2;
+	if (pos.y() >= chipY && pos.y() < chipY + 28) {
+		const auto metrics = QFontMetrics(st::normalFont);
+		const auto chips = std::vector<QString>{
+			u"Target: "_q + _targetOptions[_targetFilter].second,
+			u"Type: "_q + _typeOptions[_typeFilter],
+			u"Status: "_q + _statusOptions[_statusFilter],
+		};
+		auto chipLeft = 16;
+		for (auto i = 0; i != int(chips.size()); ++i) {
+			const auto width = metrics.horizontalAdvance(chips[i]) + 24;
+			if (pos.x() >= chipLeft && pos.x() < chipLeft + width) {
+				showFilterMenu(i, globalPos);
+				return;
+			}
+			chipLeft += width + 10;
+		}
+		return;
+	}
+	const auto hit = hitVersionRow(pos);
+	if (hit.has_value()) {
+		const auto groupIndex = *hit / 1000;
+		const auto rowIndex = *hit % 1000;
+		showFileMenu(globalPos, _groups[groupIndex].rows[rowIndex]);
+	}
 }
 
 } // namespace MonitorCenter

@@ -8,6 +8,10 @@
 
 #include "ayu/ui/monitor/monitor_center_activity.h"
 #include "ayu/ui/monitor/monitor_center_targets.h"
+#include "data/data_peer.h"
+#include "data/data_peer_id.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
 #include "lang/lang_keys.h"
 #include "profile/profile_back_button.h"
 #include "styles/style_basic.h"
@@ -222,6 +226,7 @@ private:
 
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Ui::RpWidget> _content;
+	QPointer<ActivityView> _activity;
 	object_ptr<FixedBar> _fixedBar;
 	object_ptr<Ui::PlainShadow> _fixedBarShadow;
 	View _view = View::activity;
@@ -287,6 +292,14 @@ Widget::Widget(
 
 	_scroll->move(0, _fixedBar->height());
 	_scroll->show();
+	_scroll->scrolls(
+	) | rpl::on_next([=] {
+		if (const auto activity = _activity.data()) {
+			activity->checkLoadMore(
+				_scroll->scrollTop(),
+				_scroll->height());
+		}
+	}, lifetime());
 	showView(_view);
 }
 
@@ -297,8 +310,9 @@ void Widget::showView(View view) {
 	_view = view;
 	_fixedBar->setView(view == View::activity ? 0 : 1);
 	if (view == View::activity) {
-		_content = _scroll->setOwnedWidget(
+		_activity = _scroll->setOwnedWidget(
 			object_ptr<ActivityView>(this, controller()));
+		_content = _activity.data();
 	} else {
 		_content = _scroll->setOwnedWidget(
 			object_ptr<TargetsView>(this, controller()));
@@ -408,6 +422,38 @@ void Widget::showFinishedHook() {
 
 void ShowMonitorCenter(not_null<Window::SessionController*> controller) {
 	controller->showSection(std::make_shared<SectionMemento>());
+}
+
+QString MonitorPeerName(
+		not_null<Window::SessionController*> controller,
+		long long barePeerId) {
+	auto &data = controller->session().data();
+	// Monitor stores the bare peer id without the chat type shift, so
+	// try the known kinds in order of likelihood.
+	const auto candidates = {
+		peerFromChannel(ChannelId(barePeerId)),
+		peerFromChat(ChatId(barePeerId)),
+		peerFromUser(UserId(barePeerId)),
+	};
+	for (const auto &candidate : candidates) {
+		if (const auto peer = data.peerLoaded(candidate)) {
+			return peer->name();
+		}
+	}
+	return u"ID %1"_q.arg(barePeerId);
+}
+
+QString MonitorFormatBytes(long long bytes) {
+	if (bytes >= 1024 * 1024 * 1024) {
+		return (bytes / (1024.0 * 1024 * 1024) >= 10.0)
+			? u"%1 GB"_q.arg(bytes / (1024.0 * 1024 * 1024), 0, 'f', 0)
+			: u"%1 GB"_q.arg(bytes / (1024.0 * 1024 * 1024), 0, 'f', 1);
+	} else if (bytes >= 1024 * 1024) {
+		return u"%1 MB"_q.arg(bytes / (1024.0 * 1024), 0, 'f', 1);
+	} else if (bytes >= 1024) {
+		return u"%1 KB"_q.arg(bytes / 1024.0, 0, 'f', 0);
+	}
+	return u"%1 B"_q.arg(bytes);
 }
 
 } // namespace MonitorCenter

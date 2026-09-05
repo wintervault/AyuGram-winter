@@ -6,6 +6,8 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
+#include <QString>
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -13,5 +15,11 @@ class SessionController;
 namespace MonitorCenter {
 
 void ShowMonitorCenter(not_null<Window::SessionController*> controller);
+
+[[nodiscard]] QString MonitorPeerName(
+	not_null<Window::SessionController*> controller,
+	long long barePeerId);
+
+[[nodiscard]] QString MonitorFormatBytes(long long bytes);
 
 } // namespace MonitorCenter
