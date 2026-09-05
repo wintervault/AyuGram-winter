@@ -22,6 +22,7 @@
 #include "main/main_session.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QRegularExpression>
 
 namespace AyuFeatures::Monitor {
@@ -206,9 +207,13 @@ void AppendEvent(
 		return QString();
 	}
 
-	auto name = u"%1_%2"_q.arg(item->id.bare).arg(baseName);
+	const auto info = QFileInfo(baseName);
+	auto name = u"%1_%2"_q.arg(item->id.bare).arg(info.completeBaseName());
 	if (version > 1) {
 		name += u"_v%1"_q.arg(version);
+	}
+	if (!info.suffix().isEmpty()) {
+		name += u'.' + info.suffix();
 	}
 	return dir + name;
 }
