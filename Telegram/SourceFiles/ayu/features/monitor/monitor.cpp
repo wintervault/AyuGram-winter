@@ -22,9 +22,11 @@
 #include "history/history_item.h"
 #include "main/main_session.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStorageInfo>
 
 namespace AyuFeatures::Monitor {
@@ -76,6 +78,26 @@ struct PendingMedia {
 	// template placeholders of their own.
 	static const auto invalid = QRegularExpression(u"[\\\\/:*?\"<>|{}]+"_q);
 	return part.replace(invalid, u"_"_q).trimmed();
+}
+
+// Windows device names match the stem before the first dot, and the
+// file system ignores trailing dots and spaces in every name part.
+[[nodiscard]] QString SanitizeSegment(QString segment) {
+	segment = SanitizeNamePart(segment);
+	static const auto reserved = QSet<QString>{
+		u"CON"_q, u"PRN"_q, u"AUX"_q, u"NUL"_q,
+		u"COM1"_q, u"COM2"_q, u"COM3"_q, u"COM4"_q, u"COM5"_q,
+		u"COM6"_q, u"COM7"_q, u"COM8"_q, u"COM9"_q,
+		u"LPT1"_q, u"LPT2"_q, u"LPT3"_q, u"LPT4"_q, u"LPT5"_q,
+		u"LPT6"_q, u"LPT7"_q, u"LPT8"_q, u"LPT9"_q,
+	};
+	if (reserved.contains(segment.section('.', 0, 0).toUpper())) {
+		segment = '_' + segment;
+	}
+	while (segment.endsWith('.') || segment.endsWith(' ')) {
+		segment.chop(1);
+	}
+	return segment;
 }
 
 [[nodiscard]] MediaType ClassifyDocument(not_null<DocumentData*> document) {
@@ -285,31 +307,50 @@ void AppendEvent(
 		relative.replace('{' + key + '}', value);
 	}
 
-	// Split into segments, dropping traversal and empty ones.
-	auto segments = relative.split('/', Qt::SkipEmptyParts);
-	for (auto &segment : segments) {
-		segment = SanitizeNamePart(segment);
+	// Split into segments, dropping traversal, reserved names and
+	// anything that ends up empty after sanitizing.
+	auto segments = QStringList();
+	for (const auto &part : relative.split('/', Qt::SkipEmptyParts)) {
+		const auto segment = SanitizeSegment(part);
+		if (!segment.isEmpty()) {
+			segments.push_back(segment);
+		}
 	}
-	segments.removeAll(u"."_q);
-	segments.removeAll(u".."_q);
 	if (segments.isEmpty()) {
 		return QString();
 	}
 
-	// Version suffix goes before the final file name extension.
-	if (version > 1) {
-		const auto info = QFileInfo(segments.back());
-		const auto base = info.completeBaseName();
-		if (base.isEmpty()) {
-			segments.back() = info.fileName() + u"_v%1"_q.arg(version);
-		} else {
-			segments.back() = base
-				+ u"_v%1"_q.arg(version)
-				+ (info.suffix().isEmpty() ? QString() : u'.' + info.suffix());
-		}
+	// Version suffix goes before the final file name extension, and the
+	// base name is shortened when the full path gets near the legacy
+	// Windows MAX_PATH limit.
+	const auto info = QFileInfo(segments.back());
+	const auto ext = info.suffix().isEmpty() ? QString() : u'.' + info.suffix();
+	auto base = info.completeBaseName();
+	if (base.isEmpty()) {
+		base = info.fileName();
+	}
+	const auto versionTag = version > 1
+		? u"_v%1"_q.arg(version)
+		: QString();
+	auto dirPart = ResolveSaveRoot();
+	if (segments.size() > 1) {
+		dirPart += segments.mid(0, segments.size() - 1).join('/') + '/';
 	}
 
-	return ResolveSaveRoot() + segments.join('/');
+	constexpr auto kMaxPathLen = 240;
+	const auto keep = kMaxPathLen
+		- dirPart.size()
+		- ext.size()
+		- versionTag.size()
+		- 5; // room for the short hash appended after truncation
+	if (keep > 0 && base.size() > keep) {
+		const auto digest = QCryptographicHash::hash(
+			base.toUtf8(),
+			QCryptographicHash::Md5).toHex().left(4);
+		base = base.left(keep) + u"_%1"_q.arg(QString::fromLatin1(digest));
+	}
+	segments.back() = base + versionTag + ext;
+	return dirPart + segments.back();
 }
 
 void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
