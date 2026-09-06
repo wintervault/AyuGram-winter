@@ -266,7 +266,7 @@ void ActivityView::refreshFinishedRows(
 			}
 			row.done = (fresh->status == int(MonitorFileStatus::done));
 			row.status = StatusText(*fresh, &row.statusColor);
-			row.meta = u"v%1 Â· %2 Â· %3"_q
+			row.meta = u"v%1 · %2 · %3"_q
 				.arg(fresh->version)
 				.arg(MonitorFormatBytes(fresh->fileSize))
 				.arg(TimeText(fresh->downloadedDate));
@@ -309,7 +309,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		u"Failed"_q,
 	};
 	const auto snap = AyuFeatures::Monitor::SnapshotQueue();
-	const auto activeTile = u"%1 / 3 Â· queue %2"_q
+	const auto activeTile = u"%1 / 3 · queue %2"_q
 		.arg(snap.active)
 		.arg(snap.queued);
 	const auto values = {
@@ -428,7 +428,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 					- st::normalFont->descent,
 				row.name);
 			p.setPen(st::windowSubTextFg);
-			const auto meta = row.meta + (downloading ? u" Â·  +1"_q : QString());
+			const auto meta = row.meta + (downloading ? u" ·  +1"_q : QString());
 			p.drawText(
 				w - 16 - versionMetrics.horizontalAdvance(status) - 8
 					- versionMetrics.horizontalAdvance(meta),
