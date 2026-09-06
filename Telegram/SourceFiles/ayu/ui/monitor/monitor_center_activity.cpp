@@ -399,7 +399,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFgError);
 	p.drawText(
-		QRect(clearLeft, chipY, w - 16 - clearLeft, 28),
+		QRect(clearLeft, chipY, w - kRightMargin - clearLeft, 28),
 		style::al_left | style::al_center,
 		clearText);
 

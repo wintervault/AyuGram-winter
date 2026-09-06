@@ -429,6 +429,10 @@ void ConfirmOverlay::mousePressEvent(QMouseEvent *e) {
 	const auto pos = e->pos();
 	if (_confirmButton.contains(pos)) {
 		const auto callback = _confirmed;
+		// hide() first: deleteLater() only queues destruction, so a
+		// second click in the same event-loop round would re-run the
+		// callback without this.
+		hide();
 		deleteLater();
 		if (callback) {
 			callback();
