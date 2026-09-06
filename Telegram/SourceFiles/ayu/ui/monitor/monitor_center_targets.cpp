@@ -19,6 +19,7 @@
 #include "styles/style_settings.h"
 #include "styles/style_window.h"
 #include "ui/painter.h"
+#include "ui/style/style_core_scale.h"
 #include "ui/widgets/checkbox.h"
 #include "window/window_session_controller.h"
 
@@ -27,10 +28,20 @@
 namespace MonitorCenter {
 namespace {
 
-constexpr auto kRowHeaderHeight = 48;
-constexpr auto kRowEditorLineHeight = 34;
-constexpr auto kRowEditorPad = 12;
-constexpr auto kRowRemoveHeight = 56;
+// Handwritten pixel constants are "design pixels" for a 13px font and go
+// through style::ConvertScale (font metrics are already scaled).
+[[nodiscard]] int RowHeaderHeight() {
+	return st::semiboldFont->height + style::ConvertScale(11);
+}
+[[nodiscard]] int RowEditorLineHeight() {
+	return style::ConvertScale(20);
+}
+[[nodiscard]] int RowEditorPad() {
+	return style::ConvertScale(6);
+}
+[[nodiscard]] int RowRemoveHeight() {
+	return st::semiboldFont->height + style::ConvertScale(15);
+}
 
 constexpr auto kTypeCount = 7;
 constexpr auto kEditorRows = (kTypeCount + 1) / 2;
@@ -188,13 +199,13 @@ void TargetsView::relayout() {
 }
 
 int TargetsView::resizeGetHeight(int newWidth) {
-	auto y = 40;
+	auto y = style::ConvertScale(20);
 	for (const auto &row : _rows) {
 		row->resizeToWidth(newWidth);
 		row->setGeometry(0, y, newWidth, row->height());
 		y += row->height();
 	}
-	return y + 16;
+	return y + style::ConvertScale(8);
 }
 
 void TargetsView::paintEvent(QPaintEvent *e) {
@@ -205,7 +216,11 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 		p.setFont(st::normalFont);
 		p.setPen(st::windowSubTextFg);
 		p.drawText(
-			rect().marginsRemoved(QMargins(24, 24, 24, 24)),
+			rect().marginsRemoved(QMargins(
+				style::ConvertScale(12),
+				style::ConvertScale(12),
+				style::ConvertScale(12),
+				style::ConvertScale(12))),
 			style::al_center | Qt::TextWordWrap,
 			u"No monitored chats yet.\nUse the chat context menu to add one."_q);
 		return;
@@ -213,10 +228,10 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 	p.setFont(st::normalFont);
 	p.setPen(st::windowSubTextFg);
 	p.drawText(
-		16,
-		26,
+		style::ConvertScale(8),
+		style::ConvertScale(13) + st::normalFont->ascent,
 		u"Targets (add via the chat context menu)"_q);
-	p.fillRect(0, 39, width(), 1, st::shadowFg);
+	p.fillRect(0, style::ConvertScale(20), width(), 1, st::shadowFg);
 }
 
 TargetsView::Row::Row(
@@ -327,40 +342,42 @@ void TargetsView::Row::saveTypes() {
 int TargetsView::Row::resizeGetHeight(int newWidth) {
 	updateChildrenGeometry(newWidth);
 	return _expanded
-		? kRowHeaderHeight
-			+ kRowEditorPad + st::normalFont->height + 14
-			+ kEditorRows * kRowEditorLineHeight
-			+ kRowEditorPad + kRowRemoveHeight
-		: kRowHeaderHeight;
+		? RowHeaderHeight()
+			+ RowEditorPad() + st::normalFont->height + style::ConvertScale(7)
+			+ kEditorRows * RowEditorLineHeight()
+			+ RowEditorPad() + RowRemoveHeight()
+		: RowHeaderHeight();
 }
 
 void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	_toggle->move(
-		newWidth - 32 - _toggle->width(),
-		(kRowHeaderHeight - _toggle->height()) / 2);
+		newWidth - style::ConvertScale(16) - _toggle->width(),
+		(RowHeaderHeight() - _toggle->height()) / 2);
 	for (const auto check : _typeChecks) {
 		check->setVisible(_expanded);
 	}
 	if (_expanded) {
-		const auto colWidth = (newWidth - 64) / 2;
-		auto y = kRowHeaderHeight
-			+ kRowEditorPad
-			+ st::normalFont->height + 14;
+		const auto colWidth = (newWidth - style::ConvertScale(32)) / 2;
+		auto y = RowHeaderHeight()
+			+ RowEditorPad()
+			+ st::normalFont->height + style::ConvertScale(7);
 		for (auto i = 0; i != kTypeCount; ++i) {
 			_typeChecks[i]->moveToLeft(
-				32 + (i / kEditorRows) * colWidth,
-				y + (i % kEditorRows) * kRowEditorLineHeight);
-			_typeChecks[i]->resizeToNaturalWidth(colWidth - 12);
+				style::ConvertScale(16) + (i / kEditorRows) * colWidth,
+				y + (i % kEditorRows) * RowEditorLineHeight());
+			_typeChecks[i]->resizeToNaturalWidth(colWidth - style::ConvertScale(6));
 		}
-		y += kEditorRows * kRowEditorLineHeight;
-		y += kRowEditorPad;
+		y += kEditorRows * RowEditorLineHeight();
+		y += RowEditorPad();
 		// Self-drawn destructive action, centered; no background fill so
 		// the row separator under it stays uninterrupted.
-		const auto removeWidth = st::semiboldFont->width(u"Remove target"_q) + 48;
-		const auto removeHeight = st::semiboldFont->height + 14;
+		const auto removeWidth = st::semiboldFont->width(u"Remove target"_q)
+			+ style::ConvertScale(24);
+		const auto removeHeight = st::semiboldFont->height
+			+ style::ConvertScale(7);
 		_removeRect = QRect(
 			(newWidth - removeWidth) / 2,
-			y + (kRowRemoveHeight - removeHeight) / 2,
+			y + (RowRemoveHeight() - removeHeight) / 2,
 			removeWidth,
 			removeHeight);
 	}
@@ -373,8 +390,8 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	p.setFont(st::semiboldFont);
 	p.setPen(st::windowFg);
 	p.drawText(
-		16,
-		kRowHeaderHeight / 2 + st::semiboldFont->height / 2
+		style::ConvertScale(8),
+		RowHeaderHeight() / 2 + st::semiboldFont->height / 2
 			- st::semiboldFont->descent,
 		MonitorPeerName(_controller, _target.peerId));
 
@@ -383,10 +400,11 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	const auto stats = u"%1 · %2"_q
 		.arg(_doneCount)
 		.arg(MonitorFormatBytes(_doneBytes));
-	const auto statsRight = w - 32 - _toggle->width() - 12;
+	const auto statsRight = w - style::ConvertScale(16)
+		- _toggle->width() - style::ConvertScale(6);
 	p.drawText(
 		statsRight - QFontMetrics(st::normalFont).horizontalAdvance(stats),
-		kRowHeaderHeight / 2 + st::normalFont->height / 2
+		RowHeaderHeight() / 2 + st::normalFont->height / 2
 			- st::normalFont->descent,
 		stats);
 
@@ -395,8 +413,9 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 		p.setPen(st::windowSubTextFg);
 		const auto hint = u"Only selected types are downloaded; grayed-out types are disabled globally."_q;
 		p.drawText(
-			24,
-			kRowHeaderHeight + kRowEditorPad + st::normalFont->height - 4,
+			style::ConvertScale(12),
+			RowHeaderHeight() + RowEditorPad() + st::normalFont->height
+				- style::ConvertScale(2),
 			hint);
 
 		const auto removeHover = _removeRect.contains(
@@ -406,14 +425,17 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 			p.setPen(Qt::NoPen);
 			p.setBrush(st::boxTextFgError);
 			p.setOpacity(0.1);
-			p.drawRoundedRect(_removeRect, 8, 8);
+			p.drawRoundedRect(
+				_removeRect,
+				style::ConvertScale(4),
+				style::ConvertScale(4));
 			p.setOpacity(1.0);
 		}
 		p.setFont(st::semiboldFont);
 		p.setPen(st::boxTextFgError);
 		p.drawText(_removeRect, style::al_center, u"Remove target"_q);
 	}
-	p.fillRect(0, kRowHeaderHeight - 1, w, 1, st::shadowFg);
+	p.fillRect(0, RowHeaderHeight() - 1, w, 1, st::shadowFg);
 	if (_expanded) {
 		p.fillRect(0, height() - 1, w, 1, st::shadowFg);
 	}
@@ -423,7 +445,7 @@ void TargetsView::Row::mousePressEvent(QMouseEvent *e) {
 	const auto pos = e->pos();
 	// Only the header toggles expansion; clicks in the editor area are
 	// left to its own controls, except the remove action.
-	if (pos.y() >= kRowHeaderHeight) {
+	if (pos.y() >= RowHeaderHeight()) {
 		if (_expanded && _removeRect.contains(pos)) {
 			const auto ownTarget = _target;
 			const auto ownChanged = _changed;

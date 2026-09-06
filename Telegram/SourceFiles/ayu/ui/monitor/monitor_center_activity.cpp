@@ -20,6 +20,7 @@
 #include "styles/style_boxes.h"
 #include "styles/style_window.h"
 #include "ui/painter.h"
+#include "ui/style/style_core_scale.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
 
@@ -34,16 +35,39 @@ namespace {
 
 constexpr auto kPageSize = 50;
 
-// The overlay scrollbar (width 14 + deltax 5) covers the right edge of
-// the viewport; keep the content clear of it.
-constexpr auto kRightMargin = 32;
-
-constexpr auto kTilesHeight = 76;
-constexpr auto kFiltersHeight = 48;
-constexpr auto kGroupHeaderHeight = 36;
-constexpr auto kVersionHeight = 30;
-constexpr auto kGroupPad = 16;
-constexpr auto kBottomPad = 28;
+// Handwritten pixel constants below are "design pixels" for a 13px font:
+// font metrics (normalFont->height = 26 at 2x) are already scaled, so
+// every constant goes through style::ConvertScale to match them.
+[[nodiscard]] int RightMargin() {
+	// The overlay scrollbar (style width 14 + deltax 5) is scaled already.
+	return style::ConvertScale(19);
+}
+[[nodiscard]] int TilesHeight() {
+	return st::semiboldFont->height
+		+ style::ConvertScale(4)
+		+ st::normalFont->height
+		+ 2 * style::ConvertScale(12);
+}
+[[nodiscard]] int FiltersHeight() {
+	return st::normalFont->height
+		+ style::ConvertScale(10)
+		+ 2 * style::ConvertScale(6);
+}
+[[nodiscard]] int ChipHeight() {
+	return st::normalFont->height + style::ConvertScale(10);
+}
+[[nodiscard]] int GroupHeaderHeight() {
+	return st::semiboldFont->height + style::ConvertScale(10);
+}
+[[nodiscard]] int VersionHeight() {
+	return st::normalFont->height + style::ConvertScale(4);
+}
+[[nodiscard]] int GroupPad() {
+	return style::ConvertScale(8);
+}
+[[nodiscard]] int BottomPad() {
+	return style::ConvertScale(14);
+}
 
 constexpr auto kStatusDone = 0;
 constexpr auto kStatusPending = 1;
@@ -298,16 +322,16 @@ void ActivityView::checkLoadMore(int scrollTop, int viewportHeight) {
 }
 
 int ActivityView::resizeGetHeight(int newWidth) {
-	auto y = kTilesHeight + kFiltersHeight;
+	auto y = TilesHeight() + FiltersHeight();
 	for (auto &group : _groups) {
 		group.top = y;
-		group.height = kGroupHeaderHeight
-			+ int(group.rows.size()) * kVersionHeight
-			+ kGroupPad;
+		group.height = GroupHeaderHeight()
+			+ int(group.rows.size()) * VersionHeight()
+			+ GroupPad();
 		y += group.height;
 	}
-	_contentHeight = y + kBottomPad
-		+ (_endReached ? 0 : kGroupHeaderHeight);
+	_contentHeight = y + BottomPad()
+		+ (_endReached ? 0 : GroupHeaderHeight());
 	return _contentHeight;
 }
 
@@ -339,6 +363,11 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		snap.activePaths.end());
 	auto captionIt = captions.begin();
 	auto valueIt = values.begin();
+	const auto valueH = st::semiboldFont->height;
+	const auto captionH = st::normalFont->height;
+	const auto tileGap = style::ConvertScale(4);
+	const auto tileTop = (TilesHeight() - valueH - tileGap - captionH) / 2;
+	const auto tileBlock = valueH + tileGap + captionH;
 	for (auto i = 0; i != 4; ++i, ++captionIt, ++valueIt) {
 		const auto left = i * tileWidth;
 		p.setFont(st::semiboldFont);
@@ -348,7 +377,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.setPen(st::windowFg);
 		}
 		p.drawText(
-			QRect(left, 20, tileWidth, st::semiboldFont->height),
+			QRect(left, tileTop, tileWidth, valueH),
 			style::al_top | style::al_center,
 			*valueIt);
 		p.setFont(st::normalFont);
@@ -356,16 +385,16 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.drawText(
 			QRect(
 				left,
-				20 + st::semiboldFont->height + 4,
+				tileTop + valueH + tileGap,
 				tileWidth,
-				st::normalFont->height),
+				captionH),
 			style::al_top | style::al_center,
 			*captionIt);
 		if (i > 0) {
-			p.fillRect(left, 22, 1, kTilesHeight - 44, st::shadowFg);
+			p.fillRect(left, tileTop + 2, 1, tileBlock - 4, st::shadowFg);
 		}
 	}
-	p.fillRect(0, kTilesHeight - 1, w, 1, st::shadowFg);
+	p.fillRect(0, TilesHeight() - 1, w, 1, st::shadowFg);
 
 	// Filter chips.
 	const auto chips = std::vector<QString>{
@@ -374,37 +403,37 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		u"Status: "_q + _statusOptions[_statusFilter],
 	};
 	const auto metrics = QFontMetrics(st::normalFont);
-	const auto chipY = kTilesHeight + (kFiltersHeight - 28) / 2;
-	auto chipLeft = 16;
+	const auto chipY = TilesHeight() + (FiltersHeight() - ChipHeight()) / 2;
+	auto chipLeft = style::ConvertScale(8);
 	for (const auto &chip : chips) {
 		const auto chipWidth = metrics.horizontalAdvance(chip) + 24;
 		{
 			const auto hq = PainterHighQualityEnabler(p);
 			p.setPen(Qt::NoPen);
 			p.setBrush(st::windowBgOver);
-			p.drawRoundedRect(chipLeft, chipY, chipWidth, 28, 8, 8);
+			p.drawRoundedRect(chipLeft, chipY, chipWidth, ChipHeight(), 8, 8);
 		}
 		p.setPen(st::windowFg);
 		p.drawText(
-			QRect(chipLeft, chipY, chipWidth, 28),
+			QRect(chipLeft, chipY, chipWidth, ChipHeight()),
 			style::al_center,
 			chip);
 		chipLeft += chipWidth + 10;
 	}
-	p.fillRect(0, kTilesHeight + kFiltersHeight - 1, w, 1, st::shadowFg);
+	p.fillRect(0, TilesHeight() + FiltersHeight() - 1, w, 1, st::shadowFg);
 	// Destructive "Clear history" action, right-aligned in the filter row.
 	const auto clearText = u"Clear history"_q;
-	const auto clearLeft = w - kRightMargin
+	const auto clearLeft = w - RightMargin()
 		- metrics.horizontalAdvance(clearText);
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFgError);
 	p.drawText(
-		QRect(clearLeft, chipY, w - kRightMargin - clearLeft, 28),
+		QRect(clearLeft, chipY, w - RightMargin() - clearLeft, ChipHeight()),
 		style::al_left | style::al_center,
 		clearText);
 
 	// Groups.
-	const auto listTop = kTilesHeight + kFiltersHeight;
+	const auto listTop = TilesHeight() + FiltersHeight();
 	auto y = listTop;
 	if (_groups.empty()) {
 		p.setFont(st::normalFont);
@@ -416,12 +445,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	const auto versionMetrics = QFontMetrics(st::normalFont);
+	const auto listLeft = style::ConvertScale(8);
 	for (const auto &group : _groups) {
 		p.setFont(st::semiboldFont);
 		p.setPen(st::windowFg);
 		p.drawText(
-			16,
-			group.top + kGroupHeaderHeight / 2 + st::semiboldFont->height / 2
+			listLeft,
+			group.top + GroupHeaderHeight() / 2 + st::semiboldFont->height / 2
 				- st::semiboldFont->descent,
 			group.header);
 		if (group.rows.size() > 1) {
@@ -429,13 +459,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.setPen(st::windowSubTextFg);
 			const auto count = u"%1 versions"_q.arg(group.rows.size());
 			p.drawText(
-				w - kRightMargin - versionMetrics.horizontalAdvance(count),
-				group.top + kGroupHeaderHeight / 2 + st::normalFont->height / 2
+				w - RightMargin() - versionMetrics.horizontalAdvance(count),
+				group.top + GroupHeaderHeight() / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				count);
 		}
 
-		auto rowY = group.top + kGroupHeaderHeight;
+		auto rowY = group.top + GroupHeaderHeight();
 		for (const auto &row : group.rows) {
 			const auto downloading = activePaths.contains(row.path);
 			const auto status = downloading ? u"Downloading"_q : row.status;
@@ -449,43 +479,48 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 				: st::windowSubTextFg;
 			p.setPen(Qt::NoPen);
 			p.setBrush(dotColor);
-			p.drawEllipse(24, rowY + kVersionHeight / 2 - 3, 6, 6);
+			p.drawEllipse(
+				style::ConvertScale(12),
+				rowY + (VersionHeight() - style::ConvertScale(3)) / 2,
+				style::ConvertScale(3),
+				style::ConvertScale(3));
 
 			p.setFont(st::normalFont);
 			const auto meta = row.meta + (downloading ? u" ·  +1"_q : QString());
 			const auto statusWidth = versionMetrics.horizontalAdvance(status);
 			const auto metaWidth = versionMetrics.horizontalAdvance(meta);
 			p.setPen(st::windowFg);
-			const auto nameLeft = 40;
-			const auto nameWidth = w - nameLeft - kRightMargin
-				- statusWidth - 12 - metaWidth - 12;
+			const auto nameLeft = style::ConvertScale(20);
+			const auto textGap = style::ConvertScale(6);
+			const auto nameWidth = w - nameLeft - RightMargin()
+				- statusWidth - textGap - metaWidth - textGap;
 			const auto elidedName = (versionMetrics.horizontalAdvance(row.name) > nameWidth)
 				? versionMetrics.elidedText(row.name, Qt::ElideMiddle, nameWidth)
 				: row.name;
 			p.drawText(
 				nameLeft,
-				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+				rowY + VersionHeight() / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				elidedName);
 			p.setPen(st::windowSubTextFg);
 			p.drawText(
-				w - kRightMargin - statusWidth - 12 - metaWidth,
-				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+				w - RightMargin() - statusWidth - textGap - metaWidth,
+				rowY + VersionHeight() / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				meta);
 			p.setPen(downloading ? st::windowActiveTextFg : p.pen());
 			p.drawText(
-				w - kRightMargin - statusWidth,
-				rowY + kVersionHeight / 2 + st::normalFont->height / 2
+				w - RightMargin() - statusWidth,
+				rowY + VersionHeight() / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				status);
-			rowY += kVersionHeight;
+			rowY += VersionHeight();
 		}
 
 		p.fillRect(
-			16,
-			group.top + group.height - kGroupPad / 2 - 1,
-			w - 16 - kRightMargin,
+			listLeft,
+			group.top + group.height - GroupPad() / 2 - 1,
+			w - listLeft - RightMargin(),
 			1,
 			st::shadowFg);
 		y = group.top + group.height;
@@ -495,14 +530,14 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.setFont(st::normalFont);
 		p.setPen(st::windowSubTextFg);
 		p.drawText(
-			QRect(0, y, w, kGroupHeaderHeight),
+			QRect(0, y, w, GroupHeaderHeight()),
 			style::al_center,
 			u"Loading more..."_q);
 	}
 }
 
 std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
-	if (pos.y() < kTilesHeight + kFiltersHeight) {
+	if (pos.y() < TilesHeight() + FiltersHeight()) {
 		return std::nullopt;
 	}
 	for (auto g = 0; g != int(_groups.size()); ++g) {
@@ -513,12 +548,12 @@ std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
 		if (pos.y() >= group.top + group.height) {
 			continue;
 		}
-		const auto raw = pos.y() - group.top - kGroupHeaderHeight;
+		const auto raw = pos.y() - group.top - GroupHeaderHeight();
 		if (raw < 0) {
 			// The click landed on the group header.
 			return std::nullopt;
 		}
-		const auto index = raw / kVersionHeight;
+		const auto index = raw / VersionHeight();
 		if (index < int(group.rows.size())) {
 			return g * 1000 + index;
 		}
@@ -613,8 +648,8 @@ void ActivityView::clearHistory() {
 void ActivityView::mousePressEvent(QMouseEvent *e) {
 	const auto pos = e->pos();
 	const auto globalPos = e->globalPos();
-	const auto chipY = kTilesHeight + (kFiltersHeight - 28) / 2;
-	if (pos.y() < kTilesHeight) {
+	const auto chipY = TilesHeight() + (FiltersHeight() - ChipHeight()) / 2;
+	if (pos.y() < TilesHeight()) {
 		// The failed tile filters the list to failed entries.
 		if (_failedCount > 0 && pos.x() >= (width() / 4) * 3) {
 			_statusFilter = 3;
@@ -626,7 +661,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 		}
 		return;
 	}
-	if (pos.y() >= chipY && pos.y() < chipY + 28) {
+	if (pos.y() >= chipY && pos.y() < chipY + ChipHeight()) {
 		const auto metrics = QFontMetrics(st::normalFont);
 		const auto chips = std::vector<QString>{
 			u"Target: "_q + _targetOptions[_targetFilter].second,
@@ -643,7 +678,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			chipLeft += width + 10;
 		}
 		const auto clearText = u"Clear history"_q;
-		const auto clearLeft = width() - kRightMargin
+		const auto clearLeft = width() - RightMargin()
 			- metrics.horizontalAdvance(clearText);
 		if (pos.x() >= clearLeft - 8 && pos.x() < width() - 8) {
 			clearHistory();

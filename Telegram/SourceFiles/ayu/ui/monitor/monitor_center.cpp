@@ -21,6 +21,7 @@
 #include "base/weak_qptr.h"
 #include "ui/abstract_button.h"
 #include "ui/painter.h"
+#include "ui/style/style_core_scale.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/rp_window.h"
 #include "window/window_session_controller.h"
@@ -30,6 +31,18 @@
 #include <algorithm>
 
 namespace MonitorCenter {
+
+namespace {
+
+[[nodiscard]] int HeaderHeight() {
+	// Text block + underline + breathing, all scale-aware.
+	return st::semiboldFont->height
+		+ style::ConvertScale(3)
+		+ style::ConvertScale(1)
+		+ 2 * style::ConvertScale(7);
+}
+
+} // namespace
 
 enum class View {
 	activity,
@@ -41,15 +54,17 @@ public:
 	ViewSwitch(QWidget *parent, std::vector<QString> labels)
 	: Ui::AbstractButton(parent) {
 		const auto metrics = QFontMetrics(st::normalFont);
-		auto x = kPadding;
+		const auto pad = style::ConvertScale(5);
+		const auto extra = style::ConvertScale(2);
+		auto x = pad;
 		for (auto &label : labels) {
 			const auto width = metrics.horizontalAdvance(label)
-				+ 2 * kPadding
-				+ kExtraWidth;
+				+ 2 * pad
+				+ extra;
 			_items.push_back({ label, x, width });
 			x += width;
 		}
-		resize(x + kPadding, kHeight);
+		resize(x + pad, HeaderHeight());
 		setCursor(style::cur_pointer);
 	}
 
@@ -67,6 +82,8 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override {
 		auto p = QPainter(this);
+		const auto gap = style::ConvertScale(3);
+		const auto underline = style::ConvertScale(1);
 		for (auto i = 0; i != int(_items.size()); ++i) {
 			const auto &item = _items[i];
 			const auto active = (i == _active);
@@ -77,16 +94,19 @@ protected:
 			// Text + underline form one vertically centered block.
 			const auto textTop = (height()
 				- st::semiboldFont->height
-				- kUnderlineGap
-				- kUnderline) / 2;
+				- gap
+				- underline) / 2;
 			const auto baseline = textTop + metrics.ascent();
 			p.drawText(item.left, baseline, item.text);
 			if (active) {
+				// Center the underline on the text itself: text starts
+				// at item.left (padding already included in the layout).
 				p.fillRect(
-					item.left + kPadding,
-					textTop + st::semiboldFont->height + kUnderlineGap,
-					item.width - 2 * kPadding,
-					kUnderline,
+					item.left - style::ConvertScale(1),
+					textTop + st::semiboldFont->height + gap,
+					metrics.horizontalAdvance(item.text)
+						+ style::ConvertScale(2),
+					underline,
 					st::windowBgActive);
 			}
 		}
@@ -105,12 +125,6 @@ protected:
 	}
 
 private:
-	static constexpr auto kPadding = 10;
-	static constexpr auto kExtraWidth = 4;
-	static constexpr auto kHeight = 44;
-	static constexpr auto kUnderline = 2;
-	static constexpr auto kUnderlineGap = 6;
-
 	struct Item {
 		QString text;
 		int left = 0;
@@ -177,9 +191,9 @@ CenterWindow::CenterWindow(
 		QPainter(body().get()).fillRect(clip, st::windowBg);
 	}, body()->lifetime());
 
-	_header->setGeometry(0, 0, body()->width(), 44);
+	_header->setGeometry(0, 0, body()->width(), HeaderHeight());
 	_header->show();
-	_switch->moveToRight(12, 0);
+	_switch->moveToRight(style::ConvertScale(6), 0);
 	_switch->show();
 
 	_header->paintRequest(
@@ -199,7 +213,7 @@ CenterWindow::CenterWindow(
 		showView(index == 0 ? View::activity : View::targets);
 	}, lifetime());
 
-	_scroll->move(0, 44);
+	_scroll->move(0, HeaderHeight());
 	_scroll->show();
 	_scroll->scrolls(
 	) | rpl::on_next([=] {
@@ -244,9 +258,9 @@ void CenterWindow::resizeEvent(QResizeEvent *e) {
 	// below the header down by the title bar height.
 	const auto w = width();
 	const auto h = height();
-	_header->setGeometry(0, 0, w, 44);
-	_switch->moveToRight(12, 0);
-	_scroll->setGeometry(0, 44, w, h - 44);
+	_header->setGeometry(0, 0, w, HeaderHeight());
+	_switch->moveToRight(style::ConvertScale(6), 0);
+	_scroll->setGeometry(0, HeaderHeight(), w, h - HeaderHeight());
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 	}
@@ -340,36 +354,42 @@ void ConfirmOverlay::Show(
 }
 
 void ConfirmOverlay::layoutCard() {
-	const auto cardW = std::min(380, width() - 64);
-	const auto textW = cardW - 48;
+	const auto cardW = std::min(
+		style::ConvertScale(190),
+		width() - style::ConvertScale(32));
+	const auto textW = cardW - style::ConvertScale(24);
 	const auto textH = QFontMetrics(st::normalFont).boundingRect(
 		QRect(0, 0, textW, 10000),
 		Qt::TextWordWrap,
 		_text).height();
-	const auto btnH = 32;
-	const auto cardH = 20
+	const auto btnH = style::ConvertScale(16);
+	const auto cardH = style::ConvertScale(10)
 		+ st::semiboldFont->height
-		+ 6
+		+ style::ConvertScale(3)
 		+ textH
-		+ 18
+		+ style::ConvertScale(9)
 		+ btnH
-		+ 18;
+		+ style::ConvertScale(9);
 	_card = QRect(
 		(width() - cardW) / 2,
 		(height() - cardH) / 2,
 		cardW,
 		cardH);
 	const auto fm = QFontMetrics(st::semiboldFont);
-	const auto cancelW = fm.horizontalAdvance(u"Cancel"_q) + 40;
-	const auto confirmW = fm.horizontalAdvance(_confirmText) + 40;
-	const auto btnY = _card.y() + cardH - 18 - btnH;
+	const auto cancelW = fm.horizontalAdvance(u"Cancel"_q)
+		+ style::ConvertScale(20);
+	const auto confirmW = fm.horizontalAdvance(_confirmText)
+		+ style::ConvertScale(20);
+	const auto btnY = _card.y() + cardH
+		- style::ConvertScale(9) - btnH;
 	_cancelButton = QRect(
-		_card.x() + cardW - 24 - confirmW - 10 - cancelW,
+		_card.x() + cardW - style::ConvertScale(12) - confirmW
+			- style::ConvertScale(5) - cancelW,
 		btnY,
 		cancelW,
 		btnH);
 	_confirmButton = QRect(
-		_card.x() + cardW - 24 - confirmW,
+		_card.x() + cardW - style::ConvertScale(12) - confirmW,
 		btnY,
 		confirmW,
 		btnH);
@@ -388,16 +408,22 @@ void ConfirmOverlay::paintEvent(QPaintEvent *e) {
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::boxBg);
-		p.drawRoundedRect(_card, 12, 12);
+		p.drawRoundedRect(
+			_card,
+			style::ConvertScale(6),
+			style::ConvertScale(6));
 	}
 
-	const auto innerLeft = _card.x() + 24;
-	const auto innerWidth = _card.width() - 48;
-	auto y = _card.y() + 20;
+	const auto innerLeft = _card.x() + style::ConvertScale(12);
+	const auto innerWidth = _card.width() - style::ConvertScale(24);
+	auto y = _card.y() + style::ConvertScale(10);
 	p.setFont(st::semiboldFont);
 	p.setPen(st::boxTitleFg);
-	p.drawText(innerLeft, y + st::semiboldFont->height - 2, _title);
-	y += st::semiboldFont->height + 6;
+	p.drawText(
+		innerLeft,
+		y + st::semiboldFont->height - style::ConvertScale(1),
+		_title);
+	y += st::semiboldFont->height + style::ConvertScale(3);
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFg);
 	p.drawText(QRect(innerLeft, y, innerWidth, height() - y), Qt::TextWordWrap, _text);
@@ -407,7 +433,10 @@ void ConfirmOverlay::paintEvent(QPaintEvent *e) {
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::windowBgOver);
-		p.drawRoundedRect(_cancelButton, 8, 8);
+		p.drawRoundedRect(
+			_cancelButton,
+			style::ConvertScale(4),
+			style::ConvertScale(4));
 	}
 	p.setPen(st::windowFg);
 	p.drawText(_cancelButton, style::al_center, u"Cancel"_q);
@@ -417,7 +446,10 @@ void ConfirmOverlay::paintEvent(QPaintEvent *e) {
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::boxTextFgError);
 		p.setOpacity(0.12);
-		p.drawRoundedRect(_confirmButton, 8, 8);
+		p.drawRoundedRect(
+			_confirmButton,
+			style::ConvertScale(4),
+			style::ConvertScale(4));
 		p.setOpacity(1.0);
 	}
 	p.setPen(st::boxTextFgError);
