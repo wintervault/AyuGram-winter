@@ -121,6 +121,7 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 
 private:
@@ -289,6 +290,7 @@ TargetsView::Row::Row(
 	for (const auto check : _typeChecks) {
 		check->hide();
 	}
+	setMouseTracking(true);
 }
 
 void TargetsView::Row::saveTypes() {
@@ -326,7 +328,7 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 	updateChildrenGeometry(newWidth);
 	return _expanded
 		? kRowHeaderHeight
-			+ kRowEditorPad + st::normalFont->height + 4
+			+ kRowEditorPad + st::normalFont->height + 14
 			+ kEditorRows * kRowEditorLineHeight
 			+ kRowEditorPad + kRowRemoveHeight
 		: kRowHeaderHeight;
@@ -343,7 +345,7 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		const auto colWidth = (newWidth - 64) / 2;
 		auto y = kRowHeaderHeight
 			+ kRowEditorPad
-			+ st::normalFont->height + 4;
+			+ st::normalFont->height + 14;
 		for (auto i = 0; i != kTypeCount; ++i) {
 			_typeChecks[i]->moveToLeft(
 				32 + (i / kEditorRows) * colWidth,
@@ -397,6 +399,16 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 			kRowHeaderHeight + kRowEditorPad + st::normalFont->height - 4,
 			hint);
 
+		const auto removeHover = _removeRect.contains(
+			mapFromGlobal(QCursor::pos()));
+		if (removeHover) {
+			const auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::boxTextFgError);
+			p.setOpacity(0.1);
+			p.drawRoundedRect(_removeRect, 8, 8);
+			p.setOpacity(1.0);
+		}
 		p.setFont(st::semiboldFont);
 		p.setPen(st::boxTextFgError);
 		p.drawText(_removeRect, style::al_center, u"Remove target"_q);
@@ -435,6 +447,16 @@ void TargetsView::Row::mousePressEvent(QMouseEvent *e) {
 	resizeToWidth(width());
 	update();
 	_geometryChanged();
+}
+
+void TargetsView::Row::mouseMoveEvent(QMouseEvent *e) {
+	const auto overRemove = _expanded
+		&& _removeRect.contains(e->pos());
+	setCursor(overRemove ? style::cur_pointer : style::cur_default);
+	if (overRemove || _removeRect.contains(mapFromGlobal(QCursor::pos()))) {
+		update();
+	}
+	Ui::RpWidget::mouseMoveEvent(e);
 }
 
 } // namespace MonitorCenter

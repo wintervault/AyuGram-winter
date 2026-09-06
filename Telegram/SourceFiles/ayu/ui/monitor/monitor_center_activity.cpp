@@ -38,7 +38,7 @@ constexpr auto kPageSize = 50;
 // the viewport; keep the content clear of it.
 constexpr auto kRightMargin = 32;
 
-constexpr auto kTilesHeight = 68;
+constexpr auto kTilesHeight = 76;
 constexpr auto kFiltersHeight = 48;
 constexpr auto kGroupHeaderHeight = 36;
 constexpr auto kVersionHeight = 30;
@@ -348,7 +348,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.setPen(st::windowFg);
 		}
 		p.drawText(
-			QRect(left, 16, tileWidth, st::semiboldFont->height),
+			QRect(left, 20, tileWidth, st::semiboldFont->height),
 			style::al_top | style::al_center,
 			*valueIt);
 		p.setFont(st::normalFont);
@@ -356,13 +356,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.drawText(
 			QRect(
 				left,
-				16 + st::semiboldFont->height + 3,
+				20 + st::semiboldFont->height + 4,
 				tileWidth,
 				st::normalFont->height),
 			style::al_top | style::al_center,
 			*captionIt);
 		if (i > 0) {
-			p.fillRect(left, 18, 1, kTilesHeight - 36, st::shadowFg);
+			p.fillRect(left, 22, 1, kTilesHeight - 44, st::shadowFg);
 		}
 	}
 	p.fillRect(0, kTilesHeight - 1, w, 1, st::shadowFg);

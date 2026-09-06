@@ -74,16 +74,17 @@ protected:
 			const auto metrics = QFontMetrics(font);
 			p.setFont(font);
 			p.setPen(active ? st::windowBoldFg : st::windowSubTextFg);
-			// Text sits slightly below center to keep it close to the
-			// bottom-anchored active underline.
-			const auto baseline = (height() + metrics.ascent()) / 2
-				- metrics.descent() / 2
-				+ 5;
+			// Text + underline form one vertically centered block.
+			const auto textTop = (height()
+				- st::semiboldFont->height
+				- kUnderlineGap
+				- kUnderline) / 2;
+			const auto baseline = textTop + metrics.ascent();
 			p.drawText(item.left, baseline, item.text);
 			if (active) {
 				p.fillRect(
 					item.left + kPadding,
-					height() - kUnderline,
+					textTop + st::semiboldFont->height + kUnderlineGap,
 					item.width - 2 * kPadding,
 					kUnderline,
 					st::windowBgActive);
@@ -108,6 +109,7 @@ private:
 	static constexpr auto kExtraWidth = 4;
 	static constexpr auto kHeight = 44;
 	static constexpr auto kUnderline = 2;
+	static constexpr auto kUnderlineGap = 6;
 
 	struct Item {
 		QString text;
