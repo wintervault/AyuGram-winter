@@ -20,12 +20,14 @@
 #include "styles/style_window.h"
 #include "base/weak_qptr.h"
 #include "ui/abstract_button.h"
+#include "ui/painter.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/rp_window.h"
 #include "window/window_session_controller.h"
 
 #include <QPainter>
 #include <QScreen>
+#include <algorithm>
 
 namespace MonitorCenter {
 
@@ -302,6 +304,163 @@ QString MonitorFormatBytes(long long bytes) {
 		return u"%1 KB"_q.arg(bytes / 1024.0, 0, 'f', 0);
 	}
 	return u"%1 B"_q.arg(bytes);
+}
+
+ConfirmOverlay::ConfirmOverlay(
+	not_null<QWidget*> host,
+	QString title,
+	QString text,
+	QString confirmText,
+	Fn<void()> confirmed)
+: Ui::RpWidget(host)
+, _title(std::move(title))
+, _text(std::move(text))
+, _confirmText(std::move(confirmText))
+, _confirmed(std::move(confirmed)) {
+	setMouseTracking(true);
+	host->installEventFilter(this);
+	setGeometry(host->rect());
+	show();
+	raise();
+}
+
+void ConfirmOverlay::Show(
+		not_null<QWidget*> host,
+		QString title,
+		QString text,
+		QString confirmText,
+		Fn<void()> confirmed) {
+	const auto window = host->window();
+	new ConfirmOverlay(
+		window,
+		std::move(title),
+		std::move(text),
+		std::move(confirmText),
+		std::move(confirmed));
+}
+
+void ConfirmOverlay::layoutCard() {
+	const auto cardW = std::min(380, width() - 64);
+	const auto textW = cardW - 48;
+	const auto textH = QFontMetrics(st::normalFont).boundingRect(
+		QRect(0, 0, textW, 10000),
+		Qt::TextWordWrap,
+		_text).height();
+	const auto btnH = 32;
+	const auto cardH = 20
+		+ st::semiboldFont->height
+		+ 6
+		+ textH
+		+ 18
+		+ btnH
+		+ 18;
+	_card = QRect(
+		(width() - cardW) / 2,
+		(height() - cardH) / 2,
+		cardW,
+		cardH);
+	const auto fm = QFontMetrics(st::semiboldFont);
+	const auto cancelW = fm.horizontalAdvance(u"Cancel"_q) + 40;
+	const auto confirmW = fm.horizontalAdvance(_confirmText) + 40;
+	const auto btnY = _card.y() + cardH - 18 - btnH;
+	_cancelButton = QRect(
+		_card.x() + cardW - 24 - confirmW - 10 - cancelW,
+		btnY,
+		cancelW,
+		btnH);
+	_confirmButton = QRect(
+		_card.x() + cardW - 24 - confirmW,
+		btnY,
+		confirmW,
+		btnH);
+}
+
+void ConfirmOverlay::paintEvent(QPaintEvent *e) {
+	auto p = QPainter(this);
+	layoutCard();
+
+	const auto cursor = hoverHostPos();
+	const auto confirmHover = _confirmButton.contains(cursor);
+	const auto cancelHover = _cancelButton.contains(cursor);
+
+	p.fillRect(rect(), QColor(0, 0, 0, 120));
+	{
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::boxBg);
+		p.drawRoundedRect(_card, 12, 12);
+	}
+
+	const auto innerLeft = _card.x() + 24;
+	const auto innerWidth = _card.width() - 48;
+	auto y = _card.y() + 20;
+	p.setFont(st::semiboldFont);
+	p.setPen(st::boxTitleFg);
+	p.drawText(innerLeft, y + st::semiboldFont->height - 2, _title);
+	y += st::semiboldFont->height + 6;
+	p.setFont(st::normalFont);
+	p.setPen(st::boxTextFg);
+	p.drawText(QRect(innerLeft, y, innerWidth, height() - y), Qt::TextWordWrap, _text);
+
+	p.setFont(st::semiboldFont);
+	if (cancelHover) {
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver);
+		p.drawRoundedRect(_cancelButton, 8, 8);
+	}
+	p.setPen(st::windowFg);
+	p.drawText(_cancelButton, style::al_center, u"Cancel"_q);
+
+	if (confirmHover) {
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::boxTextFgError);
+		p.setOpacity(0.12);
+		p.drawRoundedRect(_confirmButton, 8, 8);
+		p.setOpacity(1.0);
+	}
+	p.setPen(st::boxTextFgError);
+	p.drawText(_confirmButton, style::al_center, _confirmText);
+}
+
+QPoint ConfirmOverlay::hoverHostPos() const {
+	// Live cursor position: hover states follow the pointer without
+	// dedicated enter/leave handling (RpWidget finalizes leaveEvent).
+	return mapFromGlobal(QCursor::pos());
+}
+
+void ConfirmOverlay::mousePressEvent(QMouseEvent *e) {
+	const auto pos = e->pos();
+	if (_confirmButton.contains(pos)) {
+		const auto callback = _confirmed;
+		deleteLater();
+		if (callback) {
+			callback();
+		}
+	} else if (_cancelButton.contains(pos) || !_card.contains(pos)) {
+		deleteLater();
+	}
+}
+
+void ConfirmOverlay::mouseMoveEvent(QMouseEvent *e) {
+	const auto pos = e->pos();
+	const auto hover = _confirmButton.contains(pos)
+		|| _cancelButton.contains(pos);
+	setCursor(hover ? style::cur_pointer : style::cur_default);
+	update();
+}
+
+void ConfirmOverlay::resizeEvent(QResizeEvent *e) {
+	layoutCard();
+	Ui::RpWidget::resizeEvent(e);
+}
+
+bool ConfirmOverlay::eventFilter(QObject *obj, QEvent *e) {
+	if (obj == parentWidget() && e->type() == QEvent::Resize) {
+		setGeometry(parentWidget()->rect());
+	}
+	return Ui::RpWidget::eventFilter(obj, e);
 }
 
 } // namespace MonitorCenter

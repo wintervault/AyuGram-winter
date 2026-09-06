@@ -18,7 +18,6 @@
 #include "styles/style_boxes.h"
 #include "styles/style_settings.h"
 #include "styles/style_window.h"
-#include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
@@ -241,7 +240,7 @@ TargetsView::Row::Row(
 , _remove(
 		this,
 		rpl::single(u"Remove target"_q),
-		st::settingsButton) {
+		st::settingsAttentionButton) {
 	_toggle->setChecked(_target.enabled);
 	_toggle->checkedChanges(
 	) | rpl::on_next([=](bool checked) {
@@ -272,9 +271,11 @@ TargetsView::Row::Row(
 						types.end(),
 						QString::fromStdString(TypeNames()[i]))
 					!= types.end()));
+		auto label = TypeLabels()[i]
+			+ (allowed ? QString() : u" (off globally)"_q);
 		auto check = object_ptr<Ui::Checkbox>(
 			this,
-			TypeLabels()[i],
+			label,
 			checked,
 			st::defaultCheckbox);
 		const auto raw = check.data();
@@ -291,19 +292,19 @@ TargetsView::Row::Row(
 	const auto ownTarget = _target;
 	const auto ownChanged = _changed;
 	_remove->addClickHandler([=, this] {
-		_controller->show(Ui::MakeConfirmBox({
-			.text = u"Stop monitoring this chat?"_q,
-			.confirmed = [=](Fn<void()> &&close) {
+		ConfirmOverlay::Show(
+			window(),
+			u"Stop monitoring this chat?"_q,
+			u"The chat will be removed from the monitor list.\n\nDownloaded files are not affected."_q,
+			u"Remove"_q,
+			[=] {
 				AyuDatabase::Monitor::removeMonitorTarget(
 					ownTarget.userId,
 					ownTarget.peerId,
 					ownTarget.topicId);
 				AyuFeatures::Monitor::InvalidateTargetsCache();
-				close();
 				ownChanged();
-			},
-			.confirmText = tr::lng_box_delete(),
-		}));
+			});
 	});
 	// Editor controls live in updateChildrenGeometry(); keep them out of
 	// sight until the first layout actually places them.

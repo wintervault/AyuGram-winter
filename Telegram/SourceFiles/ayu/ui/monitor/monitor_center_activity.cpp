@@ -19,7 +19,6 @@
 #include "main/main_session.h"
 #include "styles/style_boxes.h"
 #include "styles/style_window.h"
-#include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
@@ -47,7 +46,10 @@ constexpr auto kStatusPending = 1;
 constexpr auto kStatusFailed = 2;
 
 [[nodiscard]] QString TimeText(int unixtime) {
-	return base::unixtime::parse(unixtime).time().toString(u"HH:mm"_q);
+	const auto parsed = base::unixtime::parse(unixtime);
+	return (parsed.date() == QDate::currentDate())
+		? parsed.time().toString(u"HH:mm"_q)
+		: parsed.date().toString(u"MM-dd HH:mm"_q);
 }
 
 [[nodiscard]] QString DateText(int unixtime) {
@@ -343,7 +345,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		}
 		p.drawText(
 			QRect(left, 16, tileWidth, st::semiboldFont->height),
-			style::al_top,
+			style::al_top | style::al_center,
 			*valueIt);
 		p.setFont(st::normalFont);
 		p.setPen(st::windowSubTextFg);
@@ -353,7 +355,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 				16 + st::semiboldFont->height + 3,
 				tileWidth,
 				st::normalFont->height),
-			style::al_top,
+			style::al_top | style::al_center,
 			*captionIt);
 		if (i > 0) {
 			p.fillRect(left, 18, 1, kTilesHeight - 36, st::shadowFg);
@@ -588,19 +590,19 @@ void ActivityView::resetHistory() {
 void ActivityView::clearHistory() {
 	const auto session = &_controller->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
-	// Guard against view destruction while the (modal) box is up.
+	// Guard against view destruction before the callback runs.
 	const auto guard = QPointer<ActivityView>(this);
-	_controller->show(Ui::MakeConfirmBox({
-		.text = u"Clear all download records?\n\nFiles on disk and the event log are not affected."_q,
-		.confirmed = [=](Fn<void()> &&close) {
+	ConfirmOverlay::Show(
+		window(),
+		u"Clear history?"_q,
+		u"All download records will be removed from the list.\n\nFiles on disk and the event log are not affected."_q,
+		u"Clear"_q,
+		[=] {
 			AyuDatabase::Monitor::clearMonitorFiles(userId);
-			close();
 			if (guard) {
 				guard->resetHistory();
 			}
-		},
-		.confirmText = tr::lng_box_delete(),
-	}));
+		});
 }
 
 void ActivityView::mousePressEvent(QMouseEvent *e) {
