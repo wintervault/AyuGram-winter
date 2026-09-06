@@ -23,6 +23,12 @@ void ShowMonitorCenter(not_null<Window::SessionController*> controller);
 	not_null<Window::SessionController*> controller,
 	long long barePeerId);
 
+// Peer name plus the topic title for topic-scoped targets.
+[[nodiscard]] QString MonitorTargetName(
+	not_null<Window::SessionController*> controller,
+	long long barePeerId,
+	long long topicId);
+
 [[nodiscard]] QString MonitorFormatBytes(long long bytes);
 
 // Modal-looking confirmation card rendered inside its host window

@@ -409,7 +409,7 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 		style::ConvertScale(8),
 		RowHeaderHeight() / 2 + st::semiboldFont->height / 2
 			- st::semiboldFont->descent,
-		MonitorPeerName(_controller, _target.peerId));
+		MonitorTargetName(_controller, _target.peerId, _target.topicId));
 
 	p.setFont(st::normalFont);
 	p.setPen(_failedCount > 0 ? st::boxTextFgError : st::windowSubTextFg);

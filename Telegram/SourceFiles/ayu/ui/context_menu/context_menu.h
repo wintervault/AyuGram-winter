@@ -34,6 +34,7 @@ void AddJumpToBeginningAction(PeerData *peerData,
 void AddShadowBanAction(PeerData *peerData,
 						const Window::PeerMenuCallback &addCallback);
 void AddMonitorAction(PeerData *peerData,
+					  Data::Thread *thread,
 					  not_null<Window::SessionController*> sessionController,
 					  const Window::PeerMenuCallback &addCallback);
 void AddOpenChannelAction(PeerData *peerData,

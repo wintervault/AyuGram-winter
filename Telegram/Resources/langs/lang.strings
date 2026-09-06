@@ -9063,3 +9063,5 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_MonitorClearTargetsConfirmation" = "Are you sure you want to remove all monitored chats?";
 "ayu_MonitorAddToChat" = "Monitor this chat";
 "ayu_MonitorRemoveFromChat" = "Stop monitoring this chat";
+"ayu_MonitorAddToTopic" = "Monitor this topic";
+"ayu_MonitorRemoveFromTopic" = "Stop monitoring this topic";

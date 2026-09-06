@@ -432,6 +432,7 @@ void AddOpenChannelAction(PeerData *peerData,
 }
 
 void AddMonitorAction(PeerData *peerData,
+					  Data::Thread *thread,
 					  not_null<Window::SessionController*> sessionController,
 					  const Window::PeerMenuCallback &addCallback) {
 	if (!peerData) {
@@ -441,22 +442,31 @@ void AddMonitorAction(PeerData *peerData,
 	const auto session = &sessionController->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
 	const auto peerId = peerData->id.value & PeerId::kChatTypeMask;
-	const auto existing = AyuDatabase::Monitor::getMonitorTarget(userId, peerId, 0);
+	// In forum channels opened at a topic, offer monitoring that topic;
+	// topicId = 0 means the whole peer (all its topics included).
+	const auto topic = peerData->isForum() && thread ? thread->asTopic() : nullptr;
+	const auto topicId = topic ? topic->rootId().bare : 0;
+	const auto existing = AyuDatabase::Monitor::getMonitorTarget(userId, peerId, topicId);
 	const auto monitored = existing.has_value() && existing->enabled;
+	const auto text = topic
+		? (monitored
+			? tr::ayu_MonitorRemoveFromTopic(tr::now)
+			: tr::ayu_MonitorAddToTopic(tr::now))
+		: (monitored
+			? tr::ayu_MonitorRemoveFromChat(tr::now)
+			: tr::ayu_MonitorAddToChat(tr::now));
 
 	addCallback(
-		monitored
-			? tr::ayu_MonitorRemoveFromChat(tr::now)
-			: tr::ayu_MonitorAddToChat(tr::now),
+		text,
 		[=]
 		{
 			if (monitored) {
-				AyuDatabase::Monitor::removeMonitorTarget(userId, peerId, 0);
+				AyuDatabase::Monitor::removeMonitorTarget(userId, peerId, topicId);
 			} else {
 				auto target = MonitorTarget();
 				target.userId = userId;
 				target.peerId = peerId;
-				target.topicId = 0;
+				target.topicId = topicId;
 				target.enabled = true;
 				target.addedDate = base::unixtime::now();
 				AyuDatabase::Monitor::upsertMonitorTarget(target);

@@ -9,6 +9,9 @@
 #include "ayu/ui/monitor/monitor_center_activity.h"
 #include "ayu/ui/monitor/monitor_center_targets.h"
 #include "lang/lang_keys.h"
+#include "data/data_channel.h"
+#include "data/data_forum.h"
+#include "data/data_forum_topic.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
@@ -305,6 +308,27 @@ QString MonitorPeerName(
 		}
 	}
 	return u"ID %1"_q.arg(barePeerId);
+}
+
+QString MonitorTargetName(
+		not_null<Window::SessionController*> controller,
+		long long barePeerId,
+		long long topicId) {
+	auto base = MonitorPeerName(controller, barePeerId);
+	if (topicId == 0) {
+		return base;
+	}
+	if (const auto peer = controller->session().data().peerLoaded(
+			peerFromChannel(ChannelId(barePeerId)))) {
+		if (const auto channel = peer->asChannel()) {
+			if (const auto forum = channel->forum()) {
+				if (const auto topic = forum->topicFor(MsgId(topicId))) {
+					return base + u" · "_q + topic->title();
+				}
+			}
+		}
+	}
+	return base + u" · #%1"_q.arg(topicId);
 }
 
 QString MonitorFormatBytes(long long bytes) {
