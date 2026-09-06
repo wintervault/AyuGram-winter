@@ -23,6 +23,7 @@
 #include "ui/widgets/checkbox.h"
 #include "window/window_session_controller.h"
 
+#include <algorithm>
 #include <map>
 
 namespace MonitorCenter {
@@ -33,14 +34,15 @@ namespace {
 [[nodiscard]] int RowHeaderHeight() {
 	return st::semiboldFont->height + style::ConvertScale(11);
 }
-[[nodiscard]] int RowEditorLineHeight() {
-	return style::ConvertScale(20);
-}
 [[nodiscard]] int RowEditorPad() {
 	return style::ConvertScale(6);
 }
 [[nodiscard]] int RowRemoveHeight() {
 	return st::semiboldFont->height + style::ConvertScale(15);
+}
+[[nodiscard]] int TitleHeight() {
+	// Page title strip above the first row.
+	return st::normalFont->height + style::ConvertScale(14);
 }
 
 constexpr auto kTypeCount = 7;
@@ -150,6 +152,7 @@ private:
 	bool _expanded = false;
 	std::vector<Ui::Checkbox*> _typeChecks;
 	std::vector<bool> _globalAllowed;
+	int _editorLineHeight = 0;
 	QRect _removeRect;
 	object_ptr<ToggleWidget> _toggle;
 
@@ -199,7 +202,7 @@ void TargetsView::relayout() {
 }
 
 int TargetsView::resizeGetHeight(int newWidth) {
-	auto y = style::ConvertScale(20);
+	auto y = TitleHeight();
 	for (const auto &row : _rows) {
 		row->resizeToWidth(newWidth);
 		row->setGeometry(0, y, newWidth, row->height());
@@ -229,9 +232,14 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 	p.setPen(st::windowSubTextFg);
 	p.drawText(
 		style::ConvertScale(8),
-		style::ConvertScale(13) + st::normalFont->ascent,
+		TitleHeight() - st::normalFont->descent - style::ConvertScale(6),
 		u"Targets (add via the chat context menu)"_q);
-	p.fillRect(0, style::ConvertScale(20), width(), 1, st::shadowFg);
+	p.fillRect(
+		0,
+		TitleHeight() - 1,
+		width(),
+		1,
+		st::shadowFg);
 }
 
 TargetsView::Row::Row(
@@ -344,7 +352,7 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 	return _expanded
 		? RowHeaderHeight()
 			+ RowEditorPad() + st::normalFont->height + style::ConvertScale(7)
-			+ kEditorRows * RowEditorLineHeight()
+			+ kEditorRows * _editorLineHeight
 			+ RowEditorPad() + RowRemoveHeight()
 		: RowHeaderHeight();
 }
@@ -356,7 +364,14 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	for (const auto check : _typeChecks) {
 		check->setVisible(_expanded);
 	}
+	// Checkboxes are style-scaled widgets: measure the real control
+	// height, a fixed line height smaller than it causes overlap.
+	_editorLineHeight = std::max(
+		_typeChecks[0]->height() + style::ConvertScale(4),
+		style::ConvertScale(20));
 	if (_expanded) {
+		const auto checkHeight = _typeChecks[0]->height();
+		const auto lineHeight = _editorLineHeight;
 		const auto colWidth = (newWidth - style::ConvertScale(32)) / 2;
 		auto y = RowHeaderHeight()
 			+ RowEditorPad()
@@ -364,10 +379,11 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		for (auto i = 0; i != kTypeCount; ++i) {
 			_typeChecks[i]->moveToLeft(
 				style::ConvertScale(16) + (i / kEditorRows) * colWidth,
-				y + (i % kEditorRows) * RowEditorLineHeight());
+				y + (i % kEditorRows) * lineHeight
+					+ (lineHeight - checkHeight) / 2);
 			_typeChecks[i]->resizeToNaturalWidth(colWidth - style::ConvertScale(6));
 		}
-		y += kEditorRows * RowEditorLineHeight();
+		y += kEditorRows * lineHeight;
 		y += RowEditorPad();
 		// Self-drawn destructive action, centered; no background fill so
 		// the row separator under it stays uninterrupted.

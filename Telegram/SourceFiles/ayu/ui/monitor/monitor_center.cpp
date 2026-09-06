@@ -354,22 +354,23 @@ void ConfirmOverlay::Show(
 }
 
 void ConfirmOverlay::layoutCard() {
+	const auto pad = style::ConvertScale(16);
 	const auto cardW = std::min(
-		style::ConvertScale(190),
-		width() - style::ConvertScale(32));
-	const auto textW = cardW - style::ConvertScale(24);
+		style::ConvertScale(220),
+		width() - 2 * style::ConvertScale(20));
+	const auto textW = cardW - 2 * pad;
 	const auto textH = QFontMetrics(st::normalFont).boundingRect(
 		QRect(0, 0, textW, 10000),
 		Qt::TextWordWrap,
 		_text).height();
-	const auto btnH = style::ConvertScale(16);
-	const auto cardH = style::ConvertScale(10)
+	const auto btnH = style::ConvertScale(18);
+	const auto cardH = style::ConvertScale(14)
 		+ st::semiboldFont->height
-		+ style::ConvertScale(3)
+		+ style::ConvertScale(6)
 		+ textH
-		+ style::ConvertScale(9)
+		+ style::ConvertScale(12)
 		+ btnH
-		+ style::ConvertScale(9);
+		+ style::ConvertScale(14);
 	_card = QRect(
 		(width() - cardW) / 2,
 		(height() - cardH) / 2,
@@ -377,19 +378,18 @@ void ConfirmOverlay::layoutCard() {
 		cardH);
 	const auto fm = QFontMetrics(st::semiboldFont);
 	const auto cancelW = fm.horizontalAdvance(u"Cancel"_q)
-		+ style::ConvertScale(20);
+		+ 2 * style::ConvertScale(12);
 	const auto confirmW = fm.horizontalAdvance(_confirmText)
-		+ style::ConvertScale(20);
+		+ 2 * style::ConvertScale(12);
 	const auto btnY = _card.y() + cardH
-		- style::ConvertScale(9) - btnH;
+		- style::ConvertScale(14) - btnH;
 	_cancelButton = QRect(
-		_card.x() + cardW - style::ConvertScale(12) - confirmW
-			- style::ConvertScale(5) - cancelW,
+		_card.x() + cardW - pad - confirmW - style::ConvertScale(5) - cancelW,
 		btnY,
 		cancelW,
 		btnH);
 	_confirmButton = QRect(
-		_card.x() + cardW - style::ConvertScale(12) - confirmW,
+		_card.x() + cardW - pad - confirmW,
 		btnY,
 		confirmW,
 		btnH);
@@ -406,50 +406,52 @@ void ConfirmOverlay::paintEvent(QPaintEvent *e) {
 	p.fillRect(rect(), QColor(0, 0, 0, 120));
 	{
 		const auto hq = PainterHighQualityEnabler(p);
-		p.setPen(Qt::NoPen);
+		p.setPen(st::shadowFg);
 		p.setBrush(st::boxBg);
 		p.drawRoundedRect(
 			_card,
-			style::ConvertScale(6),
-			style::ConvertScale(6));
+			style::ConvertScale(8),
+			style::ConvertScale(8));
 	}
 
-	const auto innerLeft = _card.x() + style::ConvertScale(12);
-	const auto innerWidth = _card.width() - style::ConvertScale(24);
-	auto y = _card.y() + style::ConvertScale(10);
+	const auto innerLeft = _card.x() + style::ConvertScale(16);
+	const auto innerWidth = _card.width() - 2 * style::ConvertScale(16);
+	auto y = _card.y() + style::ConvertScale(14);
 	p.setFont(st::semiboldFont);
 	p.setPen(st::boxTitleFg);
 	p.drawText(
 		innerLeft,
 		y + st::semiboldFont->height - style::ConvertScale(1),
 		_title);
-	y += st::semiboldFont->height + style::ConvertScale(3);
+	y += st::semiboldFont->height + style::ConvertScale(6);
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFg);
 	p.drawText(QRect(innerLeft, y, innerWidth, height() - y), Qt::TextWordWrap, _text);
 
 	p.setFont(st::semiboldFont);
-	if (cancelHover) {
+	{
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::windowBgOver);
+		p.setOpacity(cancelHover ? 1.0 : 0.7);
 		p.drawRoundedRect(
 			_cancelButton,
-			style::ConvertScale(4),
-			style::ConvertScale(4));
+			style::ConvertScale(5),
+			style::ConvertScale(5));
+		p.setOpacity(1.0);
 	}
 	p.setPen(st::windowFg);
 	p.drawText(_cancelButton, style::al_center, u"Cancel"_q);
 
-	if (confirmHover) {
+	{
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::boxTextFgError);
-		p.setOpacity(0.12);
+		p.setOpacity(confirmHover ? 0.25 : 0.15);
 		p.drawRoundedRect(
 			_confirmButton,
-			style::ConvertScale(4),
-			style::ConvertScale(4));
+			style::ConvertScale(5),
+			style::ConvertScale(5));
 		p.setOpacity(1.0);
 	}
 	p.setPen(st::boxTextFgError);
