@@ -104,6 +104,8 @@ ActivityView::ActivityView(
 		u"Failed"_q,
 		u"Replaced"_q,
 	};
+	// loadPage reads this; the full list arrives in refreshStats().
+	_targetOptions.emplace_back(0, u"All targets"_q);
 
 	loadPage();
 
@@ -151,7 +153,11 @@ void ActivityView::refreshStats() {
 	_failedCount = stats.failedCount;
 
 	// Target filter options: all monitored targets plus any target that
-	// has downloads.
+	// has downloads. Keep the current selection if it survives rebuild.
+	const auto selected = (_targetFilter >= 0
+		&& _targetFilter < int(_targetOptions.size()))
+		? _targetOptions[_targetFilter].first
+		: 0;
 	auto seen = std::map<long long, QString>();
 	for (const auto &target : AyuDatabase::Monitor::getAllMonitorTargets(userId)) {
 		seen.emplace(target.peerId, MonitorPeerName(_controller, target.peerId));
@@ -161,8 +167,12 @@ void ActivityView::refreshStats() {
 	}
 	_targetOptions.clear();
 	_targetOptions.emplace_back(0, u"All targets"_q);
+	_targetFilter = 0;
 	for (const auto &[peerId, name] : seen) {
 		_targetOptions.emplace_back(peerId, name);
+		if (peerId == selected) {
+			_targetFilter = int(_targetOptions.size()) - 1;
+		}
 	}
 	update();
 }
