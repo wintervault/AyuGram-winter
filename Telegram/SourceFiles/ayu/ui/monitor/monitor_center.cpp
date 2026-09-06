@@ -233,20 +233,15 @@ void CenterWindow::showView(View view) {
 }
 
 void CenterWindow::resizeEvent(QResizeEvent *e) {
-	const auto margins = frameMargins();
-	const auto headerTop = margins.top();
-	const auto contentWidth = width() - margins.left() - margins.right();
-	_header->setGeometry(
-		margins.left(),
-		headerTop,
-		contentWidth,
-		44);
+	// width()/height() here are the client area: it already excludes the
+	// system title bar, so no frame margins may be added on top of it.
+	// The old code added frameMargins().top() and shifted everything
+	// below the header down by the title bar height.
+	const auto w = width();
+	const auto h = height();
+	_header->setGeometry(0, 0, w, 44);
 	_switch->moveToRight(12, 0);
-	_scroll->setGeometry(
-		margins.left(),
-		headerTop + 44,
-		contentWidth,
-		height() - headerTop - 44 - margins.bottom());
+	_scroll->setGeometry(0, 44, w, h - 44);
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 	}

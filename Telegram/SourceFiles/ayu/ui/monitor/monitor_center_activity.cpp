@@ -34,6 +34,10 @@ namespace {
 
 constexpr auto kPageSize = 50;
 
+// The overlay scrollbar (width 14 + deltax 5) covers the right edge of
+// the viewport; keep the content clear of it.
+constexpr auto kRightMargin = 32;
+
 constexpr auto kTilesHeight = 68;
 constexpr auto kFiltersHeight = 48;
 constexpr auto kGroupHeaderHeight = 36;
@@ -390,7 +394,8 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	p.fillRect(0, kTilesHeight + kFiltersHeight - 1, w, 1, st::shadowFg);
 	// Destructive "Clear history" action, right-aligned in the filter row.
 	const auto clearText = u"Clear history"_q;
-	const auto clearLeft = w - 16 - metrics.horizontalAdvance(clearText);
+	const auto clearLeft = w - kRightMargin
+		- metrics.horizontalAdvance(clearText);
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFgError);
 	p.drawText(
@@ -424,7 +429,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.setPen(st::windowSubTextFg);
 			const auto count = u"%1 versions"_q.arg(group.rows.size());
 			p.drawText(
-				w - 16 - versionMetrics.horizontalAdvance(count),
+				w - kRightMargin - versionMetrics.horizontalAdvance(count),
 				group.top + kGroupHeaderHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				count);
@@ -452,7 +457,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			const auto metaWidth = versionMetrics.horizontalAdvance(meta);
 			p.setPen(st::windowFg);
 			const auto nameLeft = 40;
-			const auto nameWidth = w - nameLeft - 16
+			const auto nameWidth = w - nameLeft - kRightMargin
 				- statusWidth - 12 - metaWidth - 12;
 			const auto elidedName = (versionMetrics.horizontalAdvance(row.name) > nameWidth)
 				? versionMetrics.elidedText(row.name, Qt::ElideMiddle, nameWidth)
@@ -464,13 +469,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 				elidedName);
 			p.setPen(st::windowSubTextFg);
 			p.drawText(
-				w - 16 - statusWidth - 12 - metaWidth,
+				w - kRightMargin - statusWidth - 12 - metaWidth,
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				meta);
 			p.setPen(downloading ? st::windowActiveTextFg : p.pen());
 			p.drawText(
-				w - 16 - statusWidth,
+				w - kRightMargin - statusWidth,
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				status);
@@ -480,7 +485,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.fillRect(
 			16,
 			group.top + group.height - kGroupPad / 2 - 1,
-			w - 32,
+			w - 16 - kRightMargin,
 			1,
 			st::shadowFg);
 		y = group.top + group.height;
@@ -638,7 +643,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			chipLeft += width + 10;
 		}
 		const auto clearText = u"Clear history"_q;
-		const auto clearLeft = width() - 16
+		const auto clearLeft = width() - kRightMargin
 			- metrics.horizontalAdvance(clearText);
 		if (pos.x() >= clearLeft - 8 && pos.x() < width() - 8) {
 			clearHistory();

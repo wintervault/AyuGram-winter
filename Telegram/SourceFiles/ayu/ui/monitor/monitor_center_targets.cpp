@@ -357,7 +357,7 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 
 void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	_toggle->move(
-		newWidth - 16 - _toggle->width(),
+		newWidth - 32 - _toggle->width(),
 		(kRowHeaderHeight - _toggle->height()) / 2);
 	for (const auto check : _typeChecks) {
 		check->setVisible(_expanded);
@@ -376,7 +376,9 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		}
 		y += kEditorRows * kRowEditorLineHeight;
 		y += kRowEditorPad;
-		_remove->setGeometry(24, y, newWidth - 48, kRowRemoveHeight - 8);
+		// Centered text button: natural width, no full-row stretch.
+		_remove->resizeToNaturalWidth(newWidth - 96);
+		_remove->moveToLeft((newWidth - _remove->width()) / 2, y);
 	}
 }
 
@@ -397,7 +399,7 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	const auto stats = u"%1 · %2"_q
 		.arg(_doneCount)
 		.arg(MonitorFormatBytes(_doneBytes));
-	const auto statsRight = w - 16 - _toggle->width() - 12;
+	const auto statsRight = w - 32 - _toggle->width() - 12;
 	p.drawText(
 		statsRight - QFontMetrics(st::normalFont).horizontalAdvance(stats),
 		kRowHeaderHeight / 2 + st::normalFont->height / 2
