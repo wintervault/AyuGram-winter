@@ -376,9 +376,21 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		}
 		y += kEditorRows * kRowEditorLineHeight;
 		y += kRowEditorPad;
-		// Centered text button: natural width, no full-row stretch.
-		_remove->resizeToNaturalWidth(newWidth - 96);
-		_remove->moveToLeft((newWidth - _remove->width()) / 2, y);
+		// SettingsButton has no naturalWidth (resizeToNaturalWidth would
+		// fall back to full width with left-aligned text), so compute the
+		// text-fitting size from the style and center it manually.
+		const auto &removeSt = st::settingsAttentionButton;
+		const auto removeWidth = removeSt.padding.left()
+			+ removeSt.style.font->width(u"Remove target"_q)
+			+ removeSt.padding.right();
+		const auto removeHeight = removeSt.padding.top()
+			+ removeSt.height
+			+ removeSt.padding.bottom();
+		_remove->setGeometry(
+			(newWidth - removeWidth) / 2,
+			y,
+			removeWidth,
+			removeHeight);
 	}
 }
 

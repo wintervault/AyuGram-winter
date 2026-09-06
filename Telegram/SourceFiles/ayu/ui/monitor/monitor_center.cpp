@@ -74,8 +74,11 @@ protected:
 			const auto metrics = QFontMetrics(font);
 			p.setFont(font);
 			p.setPen(active ? st::windowBoldFg : st::windowSubTextFg);
+			// Text sits slightly below center to keep it close to the
+			// bottom-anchored active underline.
 			const auto baseline = (height() + metrics.ascent()) / 2
-				- metrics.descent() / 2;
+				- metrics.descent() / 2
+				+ 5;
 			p.drawText(item.left, baseline, item.text);
 			if (active) {
 				p.fillRect(
