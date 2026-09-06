@@ -350,7 +350,7 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 
 	p.setFont(st::normalFont);
 	p.setPen(_failedCount > 0 ? st::boxTextFgError : st::windowSubTextFg);
-	const auto stats = u"%1 \xC2\xB7 %2"_q
+	const auto stats = u"%1 · %2"_q
 		.arg(_doneCount)
 		.arg(MonitorFormatBytes(_doneBytes));
 	p.drawText(

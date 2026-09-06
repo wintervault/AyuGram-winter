@@ -141,15 +141,15 @@ void ActivityView::refreshStats() {
 		QTime(0, 0)).toSecsSinceEpoch());
 	const auto stats = AyuDatabase::Monitor::getGlobalStats(userId, dayStart);
 
-	_todayTile = u"+%1 \xC2\xB7 %2"_q
+	_todayTile = u"+%1 · %2"_q
 		.arg(stats.todayCount)
 		.arg(MonitorFormatBytes(stats.todayBytes));
-	_totalTile = u"%1 \xC2\xB7 %2"_q
+	_totalTile = u"%1 · %2"_q
 		.arg(stats.totalCount)
 		.arg(MonitorFormatBytes(stats.totalBytes));
 	_failedTile = (stats.failedCount > 0)
 		? QString::number(stats.failedCount)
-		: u"\xE2\x80\x93"_q;
+		: u"–"_q;
 	_failedCount = stats.failedCount;
 
 	// Target filter options: all monitored targets plus any target that
@@ -236,7 +236,7 @@ void ActivityView::loadPage() {
 				line.fakeId = version.fakeId;
 				line.name = QFileInfo(
 					QString::fromStdString(version.filePath)).fileName();
-				line.meta = u"v%1 \xC2\xB7 %2 \xC2\xB7 %3"_q
+				line.meta = u"v%1 · %2 · %3"_q
 					.arg(version.version)
 					.arg(MonitorFormatBytes(version.fileSize))
 					.arg(TimeText(version.downloadedDate));
@@ -246,7 +246,7 @@ void ActivityView::loadPage() {
 				group.rows.push_back(std::move(line));
 			}
 			group.header = MonitorPeerName(_controller, row.peerId)
-				+ u"  \xC2\xB7  #%1"_q.arg(row.messageId);
+				+ u"  ·  #%1"_q.arg(row.messageId);
 			current = std::move(group);
 		}
 		if (current.has_value()) {
