@@ -150,6 +150,10 @@ CenterWindow::CenterWindow(
 , _scroll(body(), st::boxScroll, false) {
 	setTitle(tr::ayu_MonitorCenter(tr::now));
 	setMinimumSize({ 480, 360 });
+	// Closing destroys the window: the weak singleton reference clears
+	// automatically and the next ShowMonitorCenter() builds a fresh one
+	// with up-to-date data.
+	setAttribute(Qt::WA_DeleteOnClose);
 	{
 		// Center on the screen the main window lives on.
 		const auto screen = parent
@@ -249,19 +253,19 @@ void CenterWindow::resizeEvent(QResizeEvent *e) {
 void ShowMonitorCenter(not_null<Window::SessionController*> controller) {
 	static base::weak_qptr<CenterWindow> active;
 	if (const auto existing = active.get()) {
+		existing->show();
 		existing->raise();
 		existing->activateWindow();
 		return;
 	}
-	// Deliberately leaked (no destruction-order issues at exit); the
-	// session guard drops the reference and schedules deletion.
+	// Deliberately leaked (WA_DeleteOnClose schedules destruction); the
+	// session guard below only force-closes it on session teardown.
 	const auto window = new CenterWindow(nullptr, controller);
 	active = window;
-	controller->session().lifetime().add([=] {
-		if (active.get() == window) {
-			active = nullptr;
+	controller->session().lifetime().add([weak = QPointer<CenterWindow>(window)] {
+		if (weak) {
+			weak->deleteLater();
 		}
-		window->deleteLater();
 	});
 	window->show();
 	window->raise();
