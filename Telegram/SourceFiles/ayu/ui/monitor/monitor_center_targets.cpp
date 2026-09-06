@@ -284,6 +284,12 @@ TargetsView::Row::Row(
 			.confirmText = tr::lng_box_delete(),
 		}));
 	});
+	// Editor controls live in updateChildrenGeometry(); keep them out of
+	// sight until the first layout actually places them.
+	for (const auto check : _typeChecks) {
+		check->hide();
+	}
+	_remove->hide();
 }
 
 void TargetsView::Row::saveTypes() {
@@ -323,7 +329,13 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 }
 
 void TargetsView::Row::updateChildrenGeometry(int newWidth) {
-	_toggle->moveToRight(16, (kRowHeaderHeight - _toggle->height()) / 2);
+	_toggle->move(
+		newWidth - 16 - _toggle->width(),
+		(kRowHeaderHeight - _toggle->height()) / 2);
+	for (const auto check : _typeChecks) {
+		check->setVisible(_expanded);
+	}
+	_remove->setVisible(_expanded);
 	if (_expanded) {
 		auto y = kRowHeaderHeight + kRowEditorPad;
 		for (const auto check : _typeChecks) {
@@ -353,13 +365,17 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	const auto stats = u"%1 · %2"_q
 		.arg(_doneCount)
 		.arg(MonitorFormatBytes(_doneBytes));
+	const auto statsRight = w - 16 - _toggle->width() - 12;
 	p.drawText(
-		w - 60 - QFontMetrics(st::normalFont).horizontalAdvance(stats),
+		statsRight - QFontMetrics(st::normalFont).horizontalAdvance(stats),
 		kRowHeaderHeight / 2 + st::normalFont->height / 2
 			- st::normalFont->descent,
 		stats);
 
 	p.fillRect(0, kRowHeaderHeight - 1, w, 1, st::shadowFg);
+	if (_expanded) {
+		p.fillRect(0, height() - 1, w, 1, st::shadowFg);
+	}
 }
 
 void TargetsView::Row::mousePressEvent(QMouseEvent *e) {

@@ -101,7 +101,7 @@ protected:
 private:
 	static constexpr auto kPadding = 10;
 	static constexpr auto kExtraWidth = 4;
-	static constexpr auto kHeight = 34;
+	static constexpr auto kHeight = 44;
 	static constexpr auto kUnderline = 2;
 
 	struct Item {
@@ -168,7 +168,7 @@ CenterWindow::CenterWindow(
 
 	_header->setGeometry(0, 0, body()->width(), 44);
 	_header->show();
-	_switch->moveToRight(12, (44 - _switch->height()) / 2);
+	_switch->moveToRight(12, 0);
 	_switch->show();
 
 	_header->paintRequest(
@@ -235,7 +235,7 @@ void CenterWindow::resizeEvent(QResizeEvent *e) {
 		headerTop,
 		contentWidth,
 		44);
-	_switch->moveToRight(12, (44 - _switch->height()) / 2);
+	_switch->moveToRight(12, 0);
 	_scroll->setGeometry(
 		margins.left(),
 		headerTop + 44,

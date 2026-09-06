@@ -236,10 +236,9 @@ void ActivityView::loadPage() {
 				line.fakeId = version.fakeId;
 				line.name = QFileInfo(
 					QString::fromStdString(version.filePath)).fileName();
-				line.meta = u"v%1 · %2 · %3"_q
+				line.meta = u"v%1 · %2"_q
 					.arg(version.version)
-					.arg(MonitorFormatBytes(version.fileSize))
-					.arg(TimeText(version.downloadedDate));
+					.arg(MonitorFormatBytes(version.fileSize));
 				line.done = (version.status == int(MonitorFileStatus::done));
 				line.status = StatusText(version, &line.statusColor);
 				line.path = QString::fromStdString(version.filePath);
@@ -276,10 +275,9 @@ void ActivityView::refreshFinishedRows(
 			}
 			row.done = (fresh->status == int(MonitorFileStatus::done));
 			row.status = StatusText(*fresh, &row.statusColor);
-			row.meta = u"v%1 · %2 · %3"_q
+			row.meta = u"v%1 · %2"_q
 				.arg(fresh->version)
-				.arg(MonitorFormatBytes(fresh->fileSize))
-				.arg(TimeText(fresh->downloadedDate));
+				.arg(MonitorFormatBytes(fresh->fileSize));
 		}
 	}
 }
@@ -319,8 +317,9 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		u"Failed"_q,
 	};
 	const auto snap = AyuFeatures::Monitor::SnapshotQueue();
-	const auto activeTile = u"%1 / 3 · queue %2"_q
+	const auto activeTile = u"%1 / %2 · queue %3"_q
 		.arg(snap.active)
+		.arg(AyuFeatures::Monitor::kMaxConcurrent)
 		.arg(snap.queued);
 	const auto values = {
 		activeTile,
@@ -336,9 +335,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	for (auto i = 0; i != 4; ++i, ++captionIt, ++valueIt) {
 		const auto left = i * tileWidth;
 		p.setFont(st::semiboldFont);
-		p.setPen(st::windowFg);
+		if (i == 0 && snap.active > 0) {
+			p.setPen(st::windowActiveTextFg);
+		} else {
+			p.setPen(st::windowFg);
+		}
 		p.drawText(
-			QRect(left, 8, tileWidth, st::semiboldFont->height),
+			QRect(left, 14, tileWidth, st::semiboldFont->height),
 			style::al_top,
 			*valueIt);
 		p.setFont(st::normalFont);
@@ -346,13 +349,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.drawText(
 			QRect(
 				left,
-				8 + st::semiboldFont->height + 2,
+				14 + st::semiboldFont->height + 3,
 				tileWidth,
 				st::normalFont->height),
 			style::al_top,
 			*captionIt);
 		if (i > 0) {
-			p.fillRect(left, 12, 1, kTilesHeight - 24, st::shadowFg);
+			p.fillRect(left, 16, 1, kTilesHeight - 32, st::shadowFg);
 		}
 	}
 	p.fillRect(0, kTilesHeight - 1, w, 1, st::shadowFg);
