@@ -8,25 +8,24 @@
 
 #include "ayu/ui/monitor/monitor_center_activity.h"
 #include "ayu/ui/monitor/monitor_center_targets.h"
+#include "lang/lang_keys.h"
 #include "data/data_peer.h"
-#include "data/data_peer_id.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
-#include "lang/lang_keys.h"
-#include "profile/profile_back_button.h"
+#include <QGuiApplication>
+
 #include "styles/style_basic.h"
-#include "styles/style_chat.h"
+#include "styles/style_boxes.h"
+#include "styles/style_layers.h"
 #include "styles/style_window.h"
+#include "base/weak_qptr.h"
 #include "ui/abstract_button.h"
-#include "ui/ui_utility.h"
 #include "ui/widgets/scroll_area.h"
-#include "ui/widgets/shadow.h"
-#include "window/section_widget.h"
-#include "window/section_memento.h"
+#include "ui/widgets/rp_window.h"
 #include "window/window_session_controller.h"
 
 #include <QPainter>
-#include <QPointer>
+#include <QScreen>
 
 namespace MonitorCenter {
 
@@ -34,8 +33,6 @@ enum class View {
 	activity,
 	targets,
 };
-
-class SectionMemento;
 
 class ViewSwitch final : public Ui::AbstractButton {
 public:
@@ -119,178 +116,79 @@ private:
 
 };
 
-class FixedBar final : public Ui::RpWidget {
+class CenterWindow final : public Ui::RpWindow {
 public:
-	FixedBar(
-		QWidget *parent,
-		not_null<Window::SessionController*> controller)
-	: Ui::RpWidget(parent)
-	, _controller(controller)
-	, _back(this)
-	, _switch(this, std::vector<QString>{
-		tr::ayu_MonitorCenterActivity(tr::now),
-		tr::ayu_MonitorCenterTargets(tr::now) }) {
-		_back->setText(tr::ayu_MonitorCenter(tr::now));
-		_back->setClickedCallback([=] { goBack(); });
-	}
-
-	[[nodiscard]] rpl::producer<int> viewRequests() const {
-		return _switch->activated();
-	}
-
-	void setView(int index) {
-		_switch->setActive(index);
-	}
-
-	// When animating mode is enabled the content is hidden and the
-	// whole fixed bar acts like a back button.
-	void setAnimatingMode(bool enabled) {
-		if (_animatingMode != enabled) {
-			_animatingMode = enabled;
-			setCursor(_animatingMode ? style::cur_pointer : style::cur_default);
-			if (_animatingMode) {
-				setAttribute(Qt::WA_OpaquePaintEvent, false);
-				hideChildren();
-			} else {
-				setAttribute(Qt::WA_OpaquePaintEvent);
-				showChildren();
-			}
-			show();
-		}
-	}
-
-protected:
-	void paintEvent(QPaintEvent *e) override {
-		if (!_animatingMode) {
-			auto p = QPainter(this);
-			p.fillRect(e->rect(), st::topBarBg);
-		}
-	}
-
-	int resizeGetHeight(int newWidth) override {
-		const auto switchWidth = _switch->width();
-		_back->resizeToWidth(newWidth - switchWidth);
-		_back->moveToLeft(0, 0);
-		_switch->moveToRight(
-			0,
-			(_back->height() - _switch->height()) / 2);
-		return _back->height();
-	}
-
-private:
-	void goBack() {
-		_controller->showBackFromStack();
-	}
-
-	not_null<Window::SessionController*> _controller;
-	object_ptr<Profile::BackButton> _back;
-	object_ptr<ViewSwitch> _switch;
-	bool _animatingMode = false;
-
-};
-
-class Widget final : public Window::SectionWidget {
-public:
-	Widget(
+	CenterWindow(
 		QWidget *parent,
 		not_null<Window::SessionController*> controller);
 
-	bool hasTopBarShadow() const override {
-		return true;
-	}
-
-	QPixmap grabForShowAnimation(
-		const Window::SectionSlideParams &params) override;
-
-	bool showInternal(
-		not_null<Window::SectionMemento*> memento,
-		const Window::SectionShow &params) override;
-	std::shared_ptr<Window::SectionMemento> createMemento() override;
-
-	void setInternalState(const QRect &geometry, not_null<SectionMemento*> memento);
-
-	// Float player interface.
-	bool floatPlayerHandleWheelEvent(QEvent *e) override;
-	QRect floatPlayerAvailableRect() override;
-
 protected:
 	void resizeEvent(QResizeEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-	void showAnimatedHook(const Window::SectionSlideParams &params) override;
-	void showFinishedHook() override;
-	void doSetInnerFocus() override;
 
 private:
 	void showView(View view);
-	void restoreState(not_null<SectionMemento*> memento);
 
+	const not_null<Window::SessionController*> _controller;
+	object_ptr<Ui::RpWidget> _header;
+	object_ptr<ViewSwitch> _switch;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Ui::RpWidget> _content;
 	QPointer<ActivityView> _activity;
-	object_ptr<FixedBar> _fixedBar;
-	object_ptr<Ui::PlainShadow> _fixedBarShadow;
 	View _view = View::activity;
 
 };
 
-class SectionMemento final : public Window::SectionMemento {
-public:
-	SectionMemento() = default;
-
-	object_ptr<Window::SectionWidget> createWidget(
-		QWidget *parent,
-		not_null<Window::SessionController*> controller,
-		Window::Column column,
-		const QRect &geometry) override {
-		if (column == Window::Column::Third) {
-			return nullptr;
-		}
-		auto result = object_ptr<Widget>(parent, controller);
-		result->setInternalState(geometry, this);
-		return result;
-	}
-
-	void setView(View view) {
-		_view = view;
-	}
-
-	[[nodiscard]] View view() const {
-		return _view;
-	}
-
-	void setScrollTop(int scrollTop) {
-		_scrollTop = scrollTop;
-	}
-
-	[[nodiscard]] int scrollTop() const {
-		return _scrollTop;
-	}
-
-private:
-	View _view = View::activity;
-	int _scrollTop = 0;
-
-};
-
-Widget::Widget(
+CenterWindow::CenterWindow(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
-: Window::SectionWidget(parent, controller)
-, _scroll(this, st::historyScroll, false)
-, _fixedBar(this, controller)
-, _fixedBarShadow(this) {
-	_fixedBar->move(0, 0);
-	_fixedBar->resizeToWidth(width());
-	_fixedBar->show();
+: Ui::RpWindow(parent)
+, _controller(controller)
+, _header(body())
+, _switch(_header, std::vector<QString>{
+	tr::ayu_MonitorCenterActivity(tr::now),
+	tr::ayu_MonitorCenterTargets(tr::now) })
+, _scroll(body(), st::boxScroll, false) {
+	setTitle(tr::ayu_MonitorCenter(tr::now));
+	setMinimumSize({ 480, 360 });
+	{
+		// Center on the screen the main window lives on.
+		const auto screen = parent
+			? parent->screen()
+			: QGuiApplication::primaryScreen();
+		const auto available = screen->availableGeometry();
+		auto geometry = QRect(0, 0, 760, 640);
+		geometry.moveCenter(available.center());
+		setGeometry(geometry);
+	}
 
-	_fixedBarShadow->raise();
+	body()->paintRequest(
+	) | rpl::on_next([=](QRect clip) {
+		QPainter(body().get()).fillRect(clip, st::windowBg);
+	}, body()->lifetime());
 
-	_fixedBar->viewRequests(
+	_header->setGeometry(0, 0, body()->width(), 44);
+	_header->show();
+	_switch->moveToRight(12, (44 - _switch->height()) / 2);
+	_switch->show();
+
+	_header->paintRequest(
+	) | rpl::on_next([=] {
+		auto p = QPainter(_header.data());
+		p.fillRect(_header->rect(), st::windowBg);
+		p.fillRect(
+			0,
+			_header->height() - 1,
+			_header->width(),
+			1,
+			st::shadowFg);
+	}, _header->lifetime());
+
+	_switch->activated(
 	) | rpl::on_next([=](int index) {
 		showView(index == 0 ? View::activity : View::targets);
 	}, lifetime());
 
-	_scroll->move(0, _fixedBar->height());
+	_scroll->move(0, 44);
 	_scroll->show();
 	_scroll->scrolls(
 	) | rpl::on_next([=] {
@@ -300,22 +198,23 @@ Widget::Widget(
 				_scroll->height());
 		}
 	}, lifetime());
+
 	showView(_view);
 }
 
-void Widget::showView(View view) {
+void CenterWindow::showView(View view) {
 	if (_view == view && _content) {
 		return;
 	}
 	_view = view;
-	_fixedBar->setView(view == View::activity ? 0 : 1);
+	_switch->setActive(view == View::activity ? 0 : 1);
 	if (view == View::activity) {
 		_activity = _scroll->setOwnedWidget(
-			object_ptr<ActivityView>(this, controller()));
+			object_ptr<ActivityView>(body(), _controller));
 		_content = _activity.data();
 	} else {
 		_content = _scroll->setOwnedWidget(
-			object_ptr<TargetsView>(this, controller()));
+			object_ptr<TargetsView>(body(), _controller));
 	}
 	if (_view == View::activity && _activity) {
 		_activity->refreshStats();
@@ -327,110 +226,46 @@ void Widget::showView(View view) {
 	_scroll->scrollToY(0);
 }
 
-QPixmap Widget::grabForShowAnimation(
-		const Window::SectionSlideParams &params) {
-	if (params.withTopBarShadow) {
-		_fixedBarShadow->hide();
-	}
-	auto result = Ui::GrabWidget(this);
-	if (params.withTopBarShadow) {
-		_fixedBarShadow->show();
-	}
-	return result;
-}
-
-void Widget::doSetInnerFocus() {
-	_scroll->setFocus();
-}
-
-bool Widget::floatPlayerHandleWheelEvent(QEvent *e) {
-	return _scroll->viewportEvent(e);
-}
-
-QRect Widget::floatPlayerAvailableRect() {
-	return mapToGlobal(_scroll->geometry());
-}
-
-bool Widget::showInternal(
-		not_null<Window::SectionMemento*> memento,
-		const Window::SectionShow &params) {
-	if (const auto my = dynamic_cast<SectionMemento*>(memento.get())) {
-		restoreState(my);
-		return true;
-	}
-	return false;
-}
-
-std::shared_ptr<Window::SectionMemento> Widget::createMemento() {
-	auto result = std::make_shared<SectionMemento>();
-	result->setView(_view);
-	result->setScrollTop(_scroll->scrollTop());
-	return result;
-}
-
-void Widget::setInternalState(
-		const QRect &geometry,
-		not_null<SectionMemento*> memento) {
-	setGeometry(geometry);
-	Ui::SendPendingMoveResizeEvents(this);
-	restoreState(memento);
-}
-
-void Widget::restoreState(not_null<SectionMemento*> memento) {
-	_view = memento->view();
-	showView(_view);
-	_scroll->scrollToY(memento->scrollTop());
-}
-
-void Widget::resizeEvent(QResizeEvent *e) {
-	if (!width() || !height()) {
-		return;
-	}
-	const auto delta = takeTopDelta();
-	auto newScrollTop = _scroll->scrollTop() + delta;
-	_fixedBar->resizeToWidth(width());
-	_fixedBarShadow->resize(width(), st::lineWidth);
-	_fixedBarShadow->moveToLeft(0, _fixedBar->height());
+void CenterWindow::resizeEvent(QResizeEvent *e) {
+	const auto margins = frameMargins();
+	const auto headerTop = margins.top();
+	const auto contentWidth = width() - margins.left() - margins.right();
+	_header->setGeometry(
+		margins.left(),
+		headerTop,
+		contentWidth,
+		44);
+	_switch->moveToRight(12, (44 - _switch->height()) / 2);
 	_scroll->setGeometry(
-		0,
-		_fixedBar->height(),
-		width(),
-		height() - _fixedBar->height());
-	if (!_scroll->isHidden() && delta) {
-		_scroll->scrollToY(newScrollTop);
-	}
+		margins.left(),
+		headerTop + 44,
+		contentWidth,
+		height() - headerTop - 44 - margins.bottom());
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 	}
 }
 
-void Widget::paintEvent(QPaintEvent *e) {
-	if (animatingShow()) {
-		SectionWidget::paintEvent(e);
-		return;
-	} else if (controller()->contentOverlapped(this, e)) {
-		return;
-	}
-	SectionWidget::PaintBackground(
-		controller(),
-		controller()->currentChatTheme(),
-		this,
-		e->rect());
-}
-
-void Widget::showAnimatedHook(const Window::SectionSlideParams &params) {
-	_fixedBar->setAnimatingMode(true);
-	if (params.withTopBarShadow) {
-		_fixedBarShadow->show();
-	}
-}
-
-void Widget::showFinishedHook() {
-	_fixedBar->setAnimatingMode(false);
-}
-
 void ShowMonitorCenter(not_null<Window::SessionController*> controller) {
-	controller->showSection(std::make_shared<SectionMemento>());
+	static base::weak_qptr<CenterWindow> active;
+	if (const auto existing = active.get()) {
+		existing->raise();
+		existing->activateWindow();
+		return;
+	}
+	// Deliberately leaked (no destruction-order issues at exit); the
+	// session guard drops the reference and schedules deletion.
+	const auto window = new CenterWindow(nullptr, controller);
+	active = window;
+	controller->session().lifetime().add([=] {
+		if (active.get() == window) {
+			active = nullptr;
+		}
+		window->deleteLater();
+	});
+	window->show();
+	window->raise();
+	window->activateWindow();
 }
 
 QString MonitorPeerName(
