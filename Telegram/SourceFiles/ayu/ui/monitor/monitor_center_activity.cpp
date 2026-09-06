@@ -34,12 +34,12 @@ namespace {
 
 constexpr auto kPageSize = 50;
 
-constexpr auto kTilesHeight = 64;
-constexpr auto kFiltersHeight = 44;
-constexpr auto kGroupHeaderHeight = 32;
-constexpr auto kVersionHeight = 24;
-constexpr auto kGroupPad = 14;
-constexpr auto kBottomPad = 24;
+constexpr auto kTilesHeight = 68;
+constexpr auto kFiltersHeight = 48;
+constexpr auto kGroupHeaderHeight = 36;
+constexpr auto kVersionHeight = 30;
+constexpr auto kGroupPad = 16;
+constexpr auto kBottomPad = 28;
 
 constexpr auto kStatusDone = 0;
 constexpr auto kStatusPending = 1;
@@ -341,7 +341,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.setPen(st::windowFg);
 		}
 		p.drawText(
-			QRect(left, 14, tileWidth, st::semiboldFont->height),
+			QRect(left, 16, tileWidth, st::semiboldFont->height),
 			style::al_top,
 			*valueIt);
 		p.setFont(st::normalFont);
@@ -349,13 +349,13 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		p.drawText(
 			QRect(
 				left,
-				14 + st::semiboldFont->height + 3,
+				16 + st::semiboldFont->height + 3,
 				tileWidth,
 				st::normalFont->height),
 			style::al_top,
 			*captionIt);
 		if (i > 0) {
-			p.fillRect(left, 16, 1, kTilesHeight - 32, st::shadowFg);
+			p.fillRect(left, 18, 1, kTilesHeight - 36, st::shadowFg);
 		}
 	}
 	p.fillRect(0, kTilesHeight - 1, w, 1, st::shadowFg);
@@ -384,6 +384,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			chip);
 		chipLeft += chipWidth + 10;
 	}
+	p.fillRect(0, kTilesHeight + kFiltersHeight - 1, w, 1, st::shadowFg);
 
 	// Groups.
 	const auto listTop = kTilesHeight + kFiltersHeight;

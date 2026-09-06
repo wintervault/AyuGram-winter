@@ -214,6 +214,7 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 		16,
 		26,
 		u"Targets (add via the chat context menu)"_q);
+	p.fillRect(0, 39, width(), 1, st::shadowFg);
 }
 
 TargetsView::Row::Row(
@@ -323,7 +324,8 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 	updateChildrenGeometry(newWidth);
 	return _expanded
 		? kRowHeaderHeight
-			+ kRowEditorPad + kTypeCount * kRowEditorLineHeight
+			+ kRowEditorPad + st::normalFont->height + 4
+			+ kTypeCount * kRowEditorLineHeight
 			+ kRowEditorPad + kRowRemoveHeight
 		: kRowHeaderHeight;
 }
@@ -337,7 +339,9 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	}
 	_remove->setVisible(_expanded);
 	if (_expanded) {
-		auto y = kRowHeaderHeight + kRowEditorPad;
+		auto y = kRowHeaderHeight
+			+ kRowEditorPad
+			+ st::normalFont->height + 4;
 		for (const auto check : _typeChecks) {
 			check->moveToLeft(32, y);
 			check->resizeToNaturalWidth(newWidth - 64);
@@ -372,6 +376,15 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 			- st::normalFont->descent,
 		stats);
 
+	if (_expanded) {
+		p.setFont(st::normalFont);
+		p.setPen(st::windowSubTextFg);
+		const auto hint = u"Only selected types are downloaded (global toggles still apply)."_q;
+		p.drawText(
+			24,
+			kRowHeaderHeight + kRowEditorPad + st::normalFont->height - 4,
+			hint);
+	}
 	p.fillRect(0, kRowHeaderHeight - 1, w, 1, st::shadowFg);
 	if (_expanded) {
 		p.fillRect(0, height() - 1, w, 1, st::shadowFg);
