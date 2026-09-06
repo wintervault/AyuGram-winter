@@ -19,6 +19,8 @@
 #include <QFile>
 #include <QTimer>
 
+#include <map>
+
 namespace AyuFeatures::Monitor {
 namespace {
 
@@ -48,6 +50,25 @@ void Finish(
 
 } // namespace
 
+std::map<Main::Session*, rpl::lifetime> &SessionLifetimes() {
+	static std::map<Main::Session*, rpl::lifetime> result;
+	return result;
+}
+
+rpl::lifetime &MonitorSessionLifetime(not_null<Main::Session*> session) {
+	auto &lifetimes = SessionLifetimes();
+	return lifetimes.try_emplace(session.get()).first->second;
+}
+
+void ClearMonitorSessionLifetime(not_null<Main::Session*> session) {
+	auto &lifetimes = SessionLifetimes();
+	const auto it = lifetimes.find(session.get());
+	if (it != lifetimes.end()) {
+		it->second.destroy();
+		lifetimes.erase(it);
+	}
+}
+
 std::optional<Data::PhotoSize> ResolveBestPhotoSize(
 		not_null<PhotoData*> photo) {
 	for (const auto size : {
@@ -73,7 +94,7 @@ void DownloadDocument(
 	// the session dies: the state owns every subscription, and the
 	// timeout timer and the deferred start both check the flag before
 	// touching the document.
-	session->lifetime().add([state, done] {
+	MonitorSessionLifetime(session).add([state, done] {
 		Finish(state, done, false);
 	});
 	QTimer::singleShot(kDownloadTimeoutMs, [=] {
@@ -124,7 +145,7 @@ void DownloadPhoto(
 		const QString &path,
 		Fn<void(bool)> done) {
 	const auto state = std::make_shared<DownloadState>();
-	session->lifetime().add([state, done] {
+	MonitorSessionLifetime(session).add([state, done] {
 		Finish(state, done, false);
 	});
 	QTimer::singleShot(kDownloadTimeoutMs, [state, done] {
@@ -140,6 +161,10 @@ void DownloadPhoto(
 			Finish(state, done, false);
 			return;
 		}
+		// A previous failed attempt leaves CloudFile::Flag::Failed set,
+		// wanted() would silently no-op until it is cleared (upstream
+		// clears it the same way before a manual retry).
+		photo->clearFailed(size);
 		view->wanted(size, origin);
 
 		// Mirrors PhotoMedia::saveToFile, but for the resolved size and

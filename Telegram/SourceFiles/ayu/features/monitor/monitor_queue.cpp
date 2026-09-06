@@ -128,7 +128,7 @@ void Dispatch(Task task) {
 	}
 	// Registered after the download added its own guard, so on session
 	// death the flag clears before any deferred finish closure runs.
-	task.session->lifetime().add([alive] {
+	MonitorSessionLifetime(task.session).add([alive] {
 		*alive = false;
 	});
 }
@@ -231,6 +231,9 @@ void EnqueuePhotoDownload(
 
 // Also drops not-yet-dispatched retries, they live in the same queue.
 void ClearSessionDownloads(not_null<Main::Session*> session) {
+	// Run the download guards (finish in-flight tasks, defang retries)
+	// and drop the aggregated lifetime before clearing the queue.
+	ClearMonitorSessionLifetime(session);
 	auto &queue = Queue();
 	queue.erase(
 		std::remove_if(queue.begin(), queue.end(), [&](const Task &task) {

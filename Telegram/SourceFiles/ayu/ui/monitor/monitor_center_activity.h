@@ -9,6 +9,9 @@
 #include "base/unique_qptr.h"
 #include "ui/rp_widget.h"
 
+#include <optional>
+#include <utility>
+
 namespace Ui {
 class PopupMenu;
 } // namespace Ui
@@ -62,7 +65,7 @@ private:
 	void loadPage();
 	void resetHistory();
 	void refreshFinishedRows(const std::vector<QString> &finished);
-	std::optional<int> hitVersionRow(QPoint pos) const;
+	std::optional<std::pair<int, int>> hitVersionRow(QPoint pos) const;
 	void showFileMenu(QPoint globalPos, const VersionRow &row);
 	void showFilterMenu(int chipIndex, QPoint globalPos);
 	void clearHistory();

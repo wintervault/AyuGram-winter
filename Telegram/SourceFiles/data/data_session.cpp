@@ -3096,6 +3096,8 @@ void Session::checkTTLs() {
 	}
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	for (const auto &item : expired) {
+		// AyuGram monitor: capture media before destroy
+		AyuFeatures::Monitor::HandleItemDeleted(item);
 		if (isMessageSavable(item)) {
 			processMessageDelete(item);
 		} else {

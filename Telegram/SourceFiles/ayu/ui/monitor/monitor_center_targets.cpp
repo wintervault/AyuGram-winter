@@ -188,7 +188,13 @@ void TargetsView::reload() {
 			done.contains(target.peerId) ? done[target.peerId] : 0,
 			bytes.contains(target.peerId) ? bytes[target.peerId] : 0,
 			failed.contains(target.peerId) ? failed[target.peerId] : 0,
-			[=] { reload(); },
+			[=, guard = QPointer<TargetsView>(this)] {
+				// Overlay confirm callbacks may run after this view was
+				// destroyed by a view switch.
+				if (guard) {
+					guard->reload();
+				}
+			},
 			[=] { relayout(); });
 		_rows.push_back(std::move(row));
 	}
@@ -333,6 +339,10 @@ void TargetsView::Row::saveTypes() {
 	if (all) {
 		// Everything allowed = follow the global settings.
 		_target.mediaTypes.clear();
+	} else if (kept.empty()) {
+		// Explicit "allow nothing": an empty whitelist would mean
+		// "follow the global settings" (i.e. allow all).
+		_target.mediaTypes = "none";
 	} else {
 		auto joined = std::string();
 		for (auto i = 0; i != int(kept.size()); ++i) {

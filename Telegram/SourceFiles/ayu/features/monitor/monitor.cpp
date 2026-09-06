@@ -29,6 +29,9 @@
 #include <QSet>
 #include <QStorageInfo>
 
+#include <map>
+#include <tuple>
+
 namespace AyuFeatures::Monitor {
 namespace {
 
@@ -246,6 +249,29 @@ void AppendEvent(
 	AyuDatabase::Monitor::addMonitorEvent(event);
 }
 
+// Config-driven skips can fire for every message in a high-traffic
+// channel and would flush the shared event log ring; throttle them
+// per target and reason.
+void AppendSkipEvent(
+		ID userId,
+		int level,
+		ID peerId,
+		int messageId,
+		const QString &reason,
+		const QString &text) {
+	constexpr auto kThrottle = 60 * crl::time(1000);
+	using Key = std::tuple<ID, ID, QString>;
+	static std::map<Key, crl::time> last;
+	const auto now = crl::now();
+	const auto key = Key{ userId, peerId, reason };
+	const auto it = last.find(key);
+	if (it != last.end() && now - it->second < kThrottle) {
+		return;
+	}
+	last[key] = now;
+	AppendEvent(userId, level, u"skip"_q, peerId, messageId, text);
+}
+
 [[nodiscard]] std::optional<PendingMedia> ExtractMedia(
 		not_null<HistoryItem*> item) {
 	const auto media = item->media();
@@ -391,7 +417,13 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		return;
 	}
 	if (!TargetAllowsType(userId, peerId, item->topicRootId().bare, media.type)) {
-		AppendEvent(userId, 0, u"skip"_q, peerId, msgId, u"type not allowed by target: %1"_q.arg(TypeName(media.type)));
+		AppendSkipEvent(
+			userId,
+			0,
+			peerId,
+			msgId,
+			u"target-type"_q,
+			u"type not allowed by target: %1"_q.arg(TypeName(media.type)));
 		return;
 	}
 
@@ -409,7 +441,13 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		: media.photo->imageByteSize(*photoSize);
 	const auto maxSize = int64(settings.monitorMaxFileSizeMB()) * 1024 * 1024;
 	if (maxSize > 0 && expectedSize > maxSize) {
-		AppendEvent(userId, 1, u"skip"_q, peerId, msgId, u"oversize: %1"_q.arg(expectedSize));
+		AppendSkipEvent(
+			userId,
+			1,
+			peerId,
+			msgId,
+			u"oversize"_q,
+			u"oversize: %1"_q.arg(expectedSize));
 		return;
 	}
 
@@ -422,12 +460,12 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		const auto storage = QStorageInfo(root);
 		const auto available = storage.bytesAvailable();
 		if (storage.isValid() && available >= 0 && available < minFreeBytes) {
-			AppendEvent(
+			AppendSkipEvent(
 				userId,
 				1,
-				u"skip"_q,
 				peerId,
 				msgId,
+				u"low-disk"_q,
 				u"low disk space: %1 MB free"_q.arg(available / (1024 * 1024)));
 			return;
 		}
@@ -453,9 +491,29 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 			return;
 		}
 		const auto version = *latestVersion + 1;
-		const auto path = BuildFilePath(item, version);
+		auto path = BuildFilePath(item, version);
 		if (path.isEmpty()) {
 			return;
+		}
+		// A template without a unique variable can map different
+		// messages to the same path; never overwrite an existing
+		// file, suffix it instead.
+		if (QFileInfo::exists(path)) {
+			const auto info = QFileInfo(path);
+			const auto base = info.completeBaseName();
+			const auto ext = info.suffix().isEmpty()
+				? QString()
+				: u'.' + info.suffix();
+			auto seq = 1;
+			while (true) {
+				const auto candidate = info.dir().filePath(
+					base + u"_%1"_q.arg(seq) + ext);
+				if (!QFileInfo::exists(candidate)) {
+					path = candidate;
+					break;
+				}
+				++seq;
+			}
 		}
 		const auto dir = QFileInfo(path).absolutePath();
 		if (!QDir().mkpath(dir)) {

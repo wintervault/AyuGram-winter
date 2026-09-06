@@ -206,6 +206,16 @@ void ActivityView::refreshStats() {
 		}
 	}
 	update();
+	// A selected target that vanished from both lists (removed and
+	// without download records) silently resets the filter chip, but
+	// the loaded groups still match the old filter: reload them.
+	if (selected != 0 && _targetFilter == 0) {
+		_groups.clear();
+		_groupedMessages.clear();
+		_oldestFakeId = 0;
+		_endReached = false;
+		loadPage();
+	}
 }
 
 void ActivityView::loadPage() {
@@ -258,6 +268,7 @@ void ActivityView::loadPage() {
 			auto group = Group();
 			group.peerId = row.peerId;
 			group.messageId = row.messageId;
+			_groupedMessages.insert(key);
 			const auto versions = AyuDatabase::Monitor::getMonitorVersions(
 				userId,
 				row.peerId,
@@ -316,7 +327,8 @@ void ActivityView::refreshFinishedRows(
 void ActivityView::checkLoadMore(int scrollTop, int viewportHeight) {
 	if (!_loading
 		&& !_endReached
-		&& scrollTop + viewportHeight > _contentHeight - 400) {
+		&& scrollTop + viewportHeight
+			> _contentHeight - style::ConvertScale(400)) {
 		loadPage();
 	}
 }
@@ -391,7 +403,12 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			style::al_top | style::al_center,
 			*captionIt);
 		if (i > 0) {
-			p.fillRect(left, tileTop + 2, 1, tileBlock - 4, st::shadowFg);
+			p.fillRect(
+				left,
+				tileTop + style::ConvertScale(2),
+				1,
+				tileBlock - 2 * style::ConvertScale(2),
+				st::shadowFg);
 		}
 	}
 	p.fillRect(0, TilesHeight() - 1, w, 1, st::shadowFg);
@@ -406,19 +423,26 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	const auto chipY = TilesHeight() + (FiltersHeight() - ChipHeight()) / 2;
 	auto chipLeft = style::ConvertScale(8);
 	for (const auto &chip : chips) {
-		const auto chipWidth = metrics.horizontalAdvance(chip) + 24;
+		const auto chipWidth = metrics.horizontalAdvance(chip)
+			+ style::ConvertScale(24);
 		{
 			const auto hq = PainterHighQualityEnabler(p);
 			p.setPen(Qt::NoPen);
 			p.setBrush(st::windowBgOver);
-			p.drawRoundedRect(chipLeft, chipY, chipWidth, ChipHeight(), 8, 8);
+			p.drawRoundedRect(
+				chipLeft,
+				chipY,
+				chipWidth,
+				ChipHeight(),
+				style::ConvertScale(8),
+				style::ConvertScale(8));
 		}
 		p.setPen(st::windowFg);
 		p.drawText(
 			QRect(chipLeft, chipY, chipWidth, ChipHeight()),
 			style::al_center,
 			chip);
-		chipLeft += chipWidth + 10;
+		chipLeft += chipWidth + style::ConvertScale(10);
 	}
 	p.fillRect(0, TilesHeight() + FiltersHeight() - 1, w, 1, st::shadowFg);
 	// Destructive "Clear history" action, right-aligned in the filter row.
@@ -536,7 +560,7 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	}
 }
 
-std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
+std::optional<std::pair<int, int>> ActivityView::hitVersionRow(QPoint pos) const {
 	if (pos.y() < TilesHeight() + FiltersHeight()) {
 		return std::nullopt;
 	}
@@ -555,7 +579,7 @@ std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
 		}
 		const auto index = raw / VersionHeight();
 		if (index < int(group.rows.size())) {
-			return g * 1000 + index;
+			return std::make_pair(g, index);
 		}
 		return std::nullopt;
 	}
@@ -668,19 +692,21 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			u"Type: "_q + _typeOptions[_typeFilter],
 			u"Status: "_q + _statusOptions[_statusFilter],
 		};
-		auto chipLeft = 16;
+		auto chipLeft = style::ConvertScale(8);
 		for (auto i = 0; i != int(chips.size()); ++i) {
-			const auto width = metrics.horizontalAdvance(chips[i]) + 24;
+			const auto width = metrics.horizontalAdvance(chips[i])
+				+ style::ConvertScale(24);
 			if (pos.x() >= chipLeft && pos.x() < chipLeft + width) {
 				showFilterMenu(i, globalPos);
 				return;
 			}
-			chipLeft += width + 10;
+			chipLeft += width + style::ConvertScale(10);
 		}
 		const auto clearText = u"Clear history"_q;
 		const auto clearLeft = width() - RightMargin()
 			- metrics.horizontalAdvance(clearText);
-		if (pos.x() >= clearLeft - 8 && pos.x() < width() - 8) {
+		if (pos.x() >= clearLeft - style::ConvertScale(8)
+			&& pos.x() < width() - RightMargin()) {
 			clearHistory();
 			return;
 		}
@@ -688,8 +714,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 	}
 	const auto hit = hitVersionRow(pos);
 	if (hit.has_value()) {
-		const auto groupIndex = *hit / 1000;
-		const auto rowIndex = *hit % 1000;
+		const auto [groupIndex, rowIndex] = *hit;
 		showFileMenu(globalPos, _groups[groupIndex].rows[rowIndex]);
 	}
 }

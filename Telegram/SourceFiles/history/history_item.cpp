@@ -81,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
+#include "ayu/features/monitor/monitor.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "ui/emoji_config.h"
 
@@ -4181,6 +4182,8 @@ void HistoryItem::applyTTL(TimeId destroyAt) {
 		const auto session = &_history->session();
 		crl::on_main(session, [session, id = fullId()]{
 			if (const auto item = session->data().message(id)) {
+				// AyuGram monitor: capture media before destroy
+				AyuFeatures::Monitor::HandleItemDeleted(item);
 				processMessageDelete(item);
 			}
 		});

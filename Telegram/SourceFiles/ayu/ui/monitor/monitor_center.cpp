@@ -146,10 +146,12 @@ public:
 		QWidget *parent,
 		not_null<Window::SessionController*> controller);
 
-protected:
-	void resizeEvent(QResizeEvent *e) override;
+	[[nodiscard]] Window::SessionController *controller() const {
+		return _controller.get();
+	}
 
 private:
+	void relayoutBody(QSize size);
 	void showView(View view);
 
 	const not_null<Window::SessionController*> _controller;
@@ -227,6 +229,15 @@ CenterWindow::CenterWindow(
 		}
 	}, lifetime());
 
+	// body() geometry excludes the custom title bar and the shadow
+	// resize area on each side; subscribe to its real size instead of
+	// laying out from the window resizeEvent (whose client size is
+	// larger and would clip the scroll against body()).
+	body()->sizeValue(
+	) | rpl::on_next([=](QSize size) {
+		relayoutBody(size);
+	}, lifetime());
+
 	showView(_view);
 }
 
@@ -254,28 +265,35 @@ void CenterWindow::showView(View view) {
 	_scroll->scrollToY(0);
 }
 
-void CenterWindow::resizeEvent(QResizeEvent *e) {
-	// width()/height() here are the client area: it already excludes the
-	// system title bar, so no frame margins may be added on top of it.
-	// The old code added frameMargins().top() and shifted everything
-	// below the header down by the title bar height.
-	const auto w = width();
-	const auto h = height();
+void CenterWindow::relayoutBody(QSize size) {
+	// The window client rect is larger than body() by the custom title
+	// bar height and the shadow resize area on each side, so laying out
+	// from it would clip the scroll bottom/right against body().
+	const auto w = size.width();
+	const auto h = size.height();
 	_header->setGeometry(0, 0, w, HeaderHeight());
 	_switch->moveToRight(style::ConvertScale(6), 0);
 	_scroll->setGeometry(0, HeaderHeight(), w, h - HeaderHeight());
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 	}
+	if (_view == View::activity && _activity) {
+		_activity->checkLoadMore(_scroll->scrollTop(), _scroll->height());
+	}
 }
 
 void ShowMonitorCenter(not_null<Window::SessionController*> controller) {
 	static base::weak_qptr<CenterWindow> active;
 	if (const auto existing = active.get()) {
-		existing->show();
-		existing->raise();
-		existing->activateWindow();
-		return;
+		if (existing->controller() == controller.get()) {
+			existing->show();
+			existing->raise();
+			existing->activateWindow();
+			return;
+		}
+		// Another account is active: rebuild with the current session,
+		// all data queries are bound to the creating controller.
+		existing->close();
 	}
 	// Deliberately leaked (WA_DeleteOnClose schedules destruction); the
 	// session guard below only force-closes it on session teardown.
@@ -427,7 +445,7 @@ void ConfirmOverlay::paintEvent(QPaintEvent *e) {
 	const auto confirmHover = _confirmButton.contains(cursor);
 	const auto cancelHover = _cancelButton.contains(cursor);
 
-	p.fillRect(rect(), QColor(0, 0, 0, 120));
+	p.fillRect(rect(), st::layerBg);
 	{
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(st::shadowFg);

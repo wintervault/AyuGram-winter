@@ -8,6 +8,7 @@
 
 #include "data/data_file_origin.h"
 #include "data/data_photo.h"
+#include "rpl/lifetime.h"
 
 #include <optional>
 
@@ -20,6 +21,16 @@ class Session;
 } // namespace Main
 
 namespace AyuFeatures::Monitor {
+
+// Aggregated per-session lifetime for download guards: callbacks go
+// here instead of session->lifetime(), which has no per-entry removal
+// and would accumulate one entry per download on long sessions.
+[[nodiscard]] rpl::lifetime &MonitorSessionLifetime(
+	not_null<Main::Session*> session);
+
+// Runs all guards registered for the session and drops the entry
+// (called from ClearSessionDownloads on session teardown).
+void ClearMonitorSessionLifetime(not_null<Main::Session*> session);
 
 // PhotoData::validSizeIndex only looks upward from the requested size
 // and PhotoMedia::loaded() checks the Large slot only, so a photo without
