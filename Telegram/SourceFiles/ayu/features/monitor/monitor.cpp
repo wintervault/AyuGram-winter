@@ -278,6 +278,11 @@ void AppendSkipEvent(
 	if (!media) {
 		return std::nullopt;
 	}
+	if (media->webpage()) {
+		// A link preview is not message media: its photo/document
+		// belongs to the linked page, don't archive it.
+		return std::nullopt;
+	}
 	auto result = PendingMedia{ .item = item };
 	if (const auto photo = media->photo()) {
 		result.photo = photo;
@@ -479,6 +484,11 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		if (status != int(MonitorFileStatus::failed) && !fileGone) {
 			return;
 		}
+		// The file (or its whole directory) may have been removed while
+		// the record still says done: recreate the directory or the
+		// retry would fail for good.
+		QDir().mkpath(QFileInfo(
+			QString::fromStdString(existing->filePath)).absolutePath());
 		existing->status = int(MonitorFileStatus::pending);
 		existing->errorInfo.clear();
 		existing->downloadedDate = base::unixtime::now();

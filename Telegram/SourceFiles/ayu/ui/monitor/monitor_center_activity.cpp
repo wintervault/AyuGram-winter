@@ -100,9 +100,11 @@ constexpr auto kStatusFailed = 2;
 
 ActivityView::ActivityView(
 	QWidget *parent,
-	not_null<Window::SessionController*> controller)
+	not_null<Window::SessionController*> controller,
+	Fn<void()> scrollToTop)
 : Ui::RpWidget(parent)
-, _controller(controller) {
+, _controller(controller)
+, _scrollToTop(std::move(scrollToTop)) {
 	_typeOptions = { u"All"_q };
 	const auto names = {
 		u"Photo"_q,
@@ -215,6 +217,7 @@ void ActivityView::refreshStats() {
 		_oldestFakeId = 0;
 		_endReached = false;
 		loadPage();
+		_scrollToTop();
 	}
 }
 
@@ -622,11 +625,23 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 		_oldestFakeId = 0;
 		_endReached = false;
 		loadPage();
+		// Filter changes swap the content in place: return to the top
+		// so the tiles and filter row stay visible.
+		_scrollToTop();
 	};
 	if (chipIndex == 0) {
 		for (auto i = 0; i != int(_targetOptions.size()); ++i) {
-			const auto index = i;
-			menu->addAction(_targetOptions[i].second, [=] {
+			const auto peerId = _targetOptions[i].first;
+			menu->addAction(_targetOptions[i].second, [this, select, peerId] {
+				// The options list may have been rebuilt while the
+				// menu was open: relocate by peer id, not by index.
+				auto index = 0;
+				for (auto j = 0; j != int(_targetOptions.size()); ++j) {
+					if (_targetOptions[j].first == peerId) {
+						index = j;
+						break;
+					}
+				}
 				select(index);
 			});
 		}
@@ -682,6 +697,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			_oldestFakeId = 0;
 			_endReached = false;
 			loadPage();
+			_scrollToTop();
 		}
 		return;
 	}

@@ -27,6 +27,7 @@
 #include "ui/style/style_core_scale.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/rp_window.h"
+#include "mainwindow.h"
 #include "window/window_session_controller.h"
 
 #include <QPainter>
@@ -181,12 +182,12 @@ CenterWindow::CenterWindow(
 	// with up-to-date data.
 	setAttribute(Qt::WA_DeleteOnClose);
 	{
-		// Center on the screen the main window lives on.
-		const auto screen = parent
-			? parent->screen()
-			: QGuiApplication::primaryScreen();
+		// Center on the screen the main window lives on, clamped to
+		// the available area so smaller screens still fit the window.
+		const auto screen = _controller->widget()->screen();
 		const auto available = screen->availableGeometry();
 		auto geometry = QRect(0, 0, 900, 680);
+		geometry.setSize(geometry.size().boundedTo(available.size()));
 		geometry.moveCenter(available.center());
 		setGeometry(geometry);
 	}
@@ -249,7 +250,10 @@ void CenterWindow::showView(View view) {
 	_switch->setActive(view == View::activity ? 0 : 1);
 	if (view == View::activity) {
 		_activity = _scroll->setOwnedWidget(
-			object_ptr<ActivityView>(body(), _controller));
+			object_ptr<ActivityView>(
+				body(),
+				_controller,
+				[=] { _scroll->scrollToY(0); }));
 		_content = _activity.data();
 	} else {
 		_content = _scroll->setOwnedWidget(

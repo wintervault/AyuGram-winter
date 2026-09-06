@@ -28,7 +28,8 @@ class ActivityView final : public Ui::RpWidget {
 public:
 	ActivityView(
 		QWidget *parent,
-		not_null<Window::SessionController*> controller);
+		not_null<Window::SessionController*> controller,
+		Fn<void()> scrollToTop);
 
 	// Scroll container hooks: append the next page when the viewport
 	// approaches the end of the loaded content.
@@ -96,6 +97,7 @@ private:
 	int _contentHeight = 0;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	Fn<void()> _scrollToTop;
 
 };
 
