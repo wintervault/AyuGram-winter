@@ -19,7 +19,6 @@
 #include "styles/style_settings.h"
 #include "styles/style_window.h"
 #include "ui/painter.h"
-#include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "window/window_session_controller.h"
 
@@ -139,8 +138,8 @@ private:
 	bool _expanded = false;
 	std::vector<Ui::Checkbox*> _typeChecks;
 	std::vector<bool> _globalAllowed;
+	QRect _removeRect;
 	object_ptr<ToggleWidget> _toggle;
-	object_ptr<Ui::SettingsButton> _remove;
 
 };
 
@@ -236,11 +235,7 @@ TargetsView::Row::Row(
 , _failedCount(failedCount)
 , _changed(std::move(changed))
 , _geometryChanged(std::move(geometryChanged))
-, _toggle(this, _target.enabled)
-, _remove(
-		this,
-		rpl::single(u"Remove target"_q),
-		st::settingsAttentionButton) {
+, _toggle(this, _target.enabled) {
 	_toggle->setChecked(_target.enabled);
 	_toggle->checkedChanges(
 	) | rpl::on_next([=](bool checked) {
@@ -289,29 +284,11 @@ TargetsView::Row::Row(
 		}, raw->lifetime());
 		_typeChecks.push_back(raw);
 	}
-	const auto ownTarget = _target;
-	const auto ownChanged = _changed;
-	_remove->addClickHandler([=, this] {
-		ConfirmOverlay::Show(
-			window(),
-			u"Stop monitoring this chat?"_q,
-			u"The chat will be removed from the monitor list.\n\nDownloaded files are not affected."_q,
-			u"Remove"_q,
-			[=] {
-				AyuDatabase::Monitor::removeMonitorTarget(
-					ownTarget.userId,
-					ownTarget.peerId,
-					ownTarget.topicId);
-				AyuFeatures::Monitor::InvalidateTargetsCache();
-				ownChanged();
-			});
-	});
 	// Editor controls live in updateChildrenGeometry(); keep them out of
 	// sight until the first layout actually places them.
 	for (const auto check : _typeChecks) {
 		check->hide();
 	}
-	_remove->hide();
 }
 
 void TargetsView::Row::saveTypes() {
@@ -362,7 +339,6 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	for (const auto check : _typeChecks) {
 		check->setVisible(_expanded);
 	}
-	_remove->setVisible(_expanded);
 	if (_expanded) {
 		const auto colWidth = (newWidth - 64) / 2;
 		auto y = kRowHeaderHeight
@@ -376,19 +352,13 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		}
 		y += kEditorRows * kRowEditorLineHeight;
 		y += kRowEditorPad;
-		// SettingsButton has no naturalWidth (resizeToNaturalWidth would
-		// fall back to full width with left-aligned text), so compute the
-		// text-fitting size from the style and center it manually.
-		const auto &removeSt = st::settingsAttentionButton;
-		const auto removeWidth = removeSt.padding.left()
-			+ removeSt.style.font->width(u"Remove target"_q)
-			+ removeSt.padding.right();
-		const auto removeHeight = removeSt.padding.top()
-			+ removeSt.height
-			+ removeSt.padding.bottom();
-		_remove->setGeometry(
+		// Self-drawn destructive action, centered; no background fill so
+		// the row separator under it stays uninterrupted.
+		const auto removeWidth = st::semiboldFont->width(u"Remove target"_q) + 48;
+		const auto removeHeight = st::semiboldFont->height + 14;
+		_removeRect = QRect(
 			(newWidth - removeWidth) / 2,
-			y,
+			y + (kRowRemoveHeight - removeHeight) / 2,
 			removeWidth,
 			removeHeight);
 	}
@@ -426,6 +396,10 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 			24,
 			kRowHeaderHeight + kRowEditorPad + st::normalFont->height - 4,
 			hint);
+
+		p.setFont(st::semiboldFont);
+		p.setPen(st::boxTextFgError);
+		p.drawText(_removeRect, style::al_center, u"Remove target"_q);
 	}
 	p.fillRect(0, kRowHeaderHeight - 1, w, 1, st::shadowFg);
 	if (_expanded) {
@@ -434,9 +408,27 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 }
 
 void TargetsView::Row::mousePressEvent(QMouseEvent *e) {
+	const auto pos = e->pos();
 	// Only the header toggles expansion; clicks in the editor area are
-	// left to its own controls.
-	if (e->pos().y() >= kRowHeaderHeight) {
+	// left to its own controls, except the remove action.
+	if (pos.y() >= kRowHeaderHeight) {
+		if (_expanded && _removeRect.contains(pos)) {
+			const auto ownTarget = _target;
+			const auto ownChanged = _changed;
+			ConfirmOverlay::Show(
+				window(),
+				u"Stop monitoring this chat?"_q,
+				u"The chat will be removed from the monitor list.\n\nDownloaded files are not affected."_q,
+				u"Remove"_q,
+				[=] {
+					AyuDatabase::Monitor::removeMonitorTarget(
+						ownTarget.userId,
+						ownTarget.peerId,
+						ownTarget.topicId);
+					AyuFeatures::Monitor::InvalidateTargetsCache();
+					ownChanged();
+				});
+		}
 		return;
 	}
 	_expanded = !_expanded;
