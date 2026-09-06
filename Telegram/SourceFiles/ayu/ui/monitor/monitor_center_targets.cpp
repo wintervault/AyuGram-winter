@@ -363,6 +363,11 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 }
 
 void TargetsView::Row::mousePressEvent(QMouseEvent *e) {
+	// Only the header toggles expansion; clicks in the editor area are
+	// left to its own controls.
+	if (e->pos().y() >= kRowHeaderHeight) {
+		return;
+	}
 	_expanded = !_expanded;
 	resizeToWidth(width());
 	update();
