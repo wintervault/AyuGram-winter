@@ -199,6 +199,9 @@ struct MonitorFilePage
 {
 	std::vector<MonitorFile> rows;
 	bool endReached = false;
+	// Scan position after the request, matched rows or not: keeps deep
+	// filtered pagination making forward progress.
+	ID nextFakeId = 0;
 };
 
 struct MonitorTargetStats

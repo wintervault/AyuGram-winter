@@ -21,9 +21,6 @@
 namespace AyuFeatures::Monitor {
 namespace {
 
-// Keep monitor downloads from crowding out manual ones.
-constexpr auto kMaxConcurrent = 3;
-
 constexpr auto kMaxRetries = 3;
 constexpr auto kRetryDelays = std::array<crl::time, kMaxRetries>{
 	30 * crl::time(1000),

@@ -125,7 +125,7 @@ protected:
 
 private:
 	void saveTypes();
-	void updateChildrenGeometry();
+	void updateChildrenGeometry(int newWidth);
 
 	const not_null<Window::SessionController*> _controller;
 	MonitorTarget _target;
@@ -250,7 +250,10 @@ TargetsView::Row::Row(
 	const auto empty = _target.mediaTypes.empty();
 	for (auto i = 0; i != kTypeCount; ++i) {
 		const auto checked = empty
-			|| (std::find(types.begin(), types.end(), TypeLabels()[i])
+			|| (std::find(
+					types.begin(),
+					types.end(),
+					QString::fromStdString(TypeNames()[i]))
 				!= types.end());
 		auto check = object_ptr<Ui::Checkbox>(
 			this,
@@ -264,17 +267,19 @@ TargetsView::Row::Row(
 		}, raw->lifetime());
 		_typeChecks.push_back(raw);
 	}
-	_remove->addClickHandler([=] {
+	const auto ownTarget = _target;
+	const auto ownChanged = _changed;
+	_remove->addClickHandler([=, this] {
 		_controller->show(Ui::MakeConfirmBox({
 			.text = u"Stop monitoring this chat?"_q,
 			.confirmed = [=](Fn<void()> &&close) {
 				AyuDatabase::Monitor::removeMonitorTarget(
-					_target.userId,
-					_target.peerId,
-					_target.topicId);
+					ownTarget.userId,
+					ownTarget.peerId,
+					ownTarget.topicId);
 				AyuFeatures::Monitor::InvalidateTargetsCache();
-				_changed();
 				close();
+				ownChanged();
 			},
 			.confirmText = tr::lng_box_delete(),
 		}));
@@ -309,7 +314,7 @@ void TargetsView::Row::saveTypes() {
 }
 
 int TargetsView::Row::resizeGetHeight(int newWidth) {
-	updateChildrenGeometry();
+	updateChildrenGeometry(newWidth);
 	return _expanded
 		? kRowHeaderHeight
 			+ kRowEditorPad + kTypeCount * kRowEditorLineHeight
@@ -317,17 +322,17 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 		: kRowHeaderHeight;
 }
 
-void TargetsView::Row::updateChildrenGeometry() {
+void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	_toggle->moveToRight(16, (kRowHeaderHeight - _toggle->height()) / 2);
 	if (_expanded) {
 		auto y = kRowHeaderHeight + kRowEditorPad;
 		for (const auto check : _typeChecks) {
 			check->moveToLeft(32, y);
-			check->resizeToNaturalWidth(width() - 64);
+			check->resizeToNaturalWidth(newWidth - 64);
 			y += kRowEditorLineHeight;
 		}
 		y += kRowEditorPad;
-		_remove->setGeometry(24, y, width() - 48, kRowRemoveHeight - 4);
+		_remove->setGeometry(24, y, newWidth - 48, kRowRemoveHeight - 4);
 	}
 }
 

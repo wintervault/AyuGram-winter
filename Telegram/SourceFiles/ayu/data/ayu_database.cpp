@@ -841,6 +841,7 @@ MonitorFilePage getMonitorFilesPage(
 		LOG(("Failed to get monitor file page: %1").arg(ex.what()));
 		result.endReached = true;
 	}
+	result.nextFakeId = result.endReached ? 0 : cursor;
 	return result;
 }
 

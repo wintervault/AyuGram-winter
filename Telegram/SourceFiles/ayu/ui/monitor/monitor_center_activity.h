@@ -60,6 +60,7 @@ private:
 	};
 
 	void loadPage();
+	void refreshFinishedRows(const std::vector<QString> &finished);
 	std::optional<int> hitVersionRow(QPoint pos) const;
 	void showFileMenu(QPoint globalPos, const VersionRow &row);
 	void showFilterMenu(int chipIndex, QPoint globalPos);
@@ -82,7 +83,9 @@ private:
 	std::vector<QString> _statusOptions;
 
 	std::vector<Group> _groups;
+	std::set<std::pair<long long, int>> _groupedMessages;
 	long long _oldestFakeId = 0;
+	std::set<QString> _lastActivePaths;
 	bool _endReached = false;
 	bool _loading = false;
 	int _contentHeight = 0;

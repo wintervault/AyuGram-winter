@@ -36,7 +36,6 @@ constexpr auto kPageSize = 50;
 
 constexpr auto kTilesHeight = 64;
 constexpr auto kFiltersHeight = 44;
-constexpr auto kTopPad = 6;
 constexpr auto kGroupHeaderHeight = 32;
 constexpr auto kVersionHeight = 24;
 constexpr auto kGroupPad = 14;
@@ -106,12 +105,27 @@ ActivityView::ActivityView(
 		u"Replaced"_q,
 	};
 
-	refreshStats();
 	loadPage();
 
-	// Live overlay: repaint whenever the download queue changes.
+	// Live overlay: repaint on queue changes, refresh rows that just
+	// finished (their DB status moved on since the page was loaded).
 	AyuFeatures::Monitor::QueueChanged(
 	) | rpl::on_next([=] {
+		const auto snap = AyuFeatures::Monitor::SnapshotQueue();
+		const auto current = std::set<QString>(
+			snap.activePaths.begin(),
+			snap.activePaths.end());
+		auto finished = std::vector<QString>();
+		for (const auto &path : _lastActivePaths) {
+			if (!current.contains(path)) {
+				finished.push_back(path);
+			}
+		}
+		_lastActivePaths = current;
+		if (!finished.empty()) {
+			refreshFinishedRows(finished);
+			refreshStats();
+		}
 		update();
 	}, lifetime());
 }
@@ -120,7 +134,9 @@ void ActivityView::refreshStats() {
 	const auto session = &_controller->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
 	const auto now = base::unixtime::now();
-	const auto dayStart = now - (now % 86400);
+	const auto dayStart = int(QDateTime(
+		base::unixtime::parse(now).date(),
+		QTime(0, 0)).toSecsSinceEpoch());
 	const auto stats = AyuDatabase::Monitor::getGlobalStats(userId, dayStart);
 
 	_todayTile = u"+%1 \xC2\xB7 %2"_q
@@ -178,13 +194,17 @@ void ActivityView::loadPage() {
 		_oldestFakeId,
 		kPageSize);
 	_endReached = page.endReached;
+	_oldestFakeId = page.nextFakeId;
 	if (!page.rows.empty()) {
-		_oldestFakeId = page.rows.back().fakeId;
-
 		// Merge rows into groups by (peerId, messageId), loading the
 		// full version list of every message (index-backed query).
 		auto current = std::optional<Group>();
 		for (const auto &row : page.rows) {
+			const auto key = std::pair(row.peerId, row.messageId);
+			if (_groupedMessages.contains(key)) {
+				// This message was already grouped on an earlier page.
+				continue;
+			}
 			if (current.has_value()
 				&& current->peerId == row.peerId
 				&& current->messageId == row.messageId) {
@@ -223,9 +243,35 @@ void ActivityView::loadPage() {
 			_groups.push_back(std::move(*current));
 		}
 	}
-	_loading = false;
 	resizeToWidth(width());
 	update();
+	_loading = false;
+}
+
+void ActivityView::refreshFinishedRows(
+		const std::vector<QString> &finished) {
+	const auto session = &_controller->session();
+	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
+	for (auto &group : _groups) {
+		for (auto &row : group.rows) {
+			if (std::find(finished.begin(), finished.end(), row.path)
+				== finished.end()) {
+				continue;
+			}
+			const auto fresh = AyuDatabase::Monitor::getMonitorFileById(
+				userId,
+				row.fakeId);
+			if (!fresh.has_value()) {
+				continue;
+			}
+			row.done = (fresh->status == int(MonitorFileStatus::done));
+			row.status = StatusText(*fresh, &row.statusColor);
+			row.meta = u"v%1 Â· %2 Â· %3"_q
+				.arg(fresh->version)
+				.arg(MonitorFormatBytes(fresh->fileSize))
+				.arg(TimeText(fresh->downloadedDate));
+		}
+	}
 }
 
 void ActivityView::checkLoadMore(int scrollTop, int viewportHeight) {
@@ -237,7 +283,7 @@ void ActivityView::checkLoadMore(int scrollTop, int viewportHeight) {
 }
 
 int ActivityView::resizeGetHeight(int newWidth) {
-	auto y = kTopPad;
+	auto y = kTilesHeight + kFiltersHeight;
 	for (auto &group : _groups) {
 		group.top = y;
 		group.height = kGroupHeaderHeight
@@ -429,9 +475,13 @@ std::optional<int> ActivityView::hitVersionRow(QPoint pos) const {
 		if (pos.y() >= group.top + group.height) {
 			continue;
 		}
-		const auto index = (pos.y() - group.top - kGroupHeaderHeight)
-			/ kVersionHeight;
-		if (index >= 0 && index < int(group.rows.size())) {
+		const auto raw = pos.y() - group.top - kGroupHeaderHeight;
+		if (raw < 0) {
+			// The click landed on the group header.
+			return std::nullopt;
+		}
+		const auto index = raw / kVersionHeight;
+		if (index < int(group.rows.size())) {
 			return g * 1000 + index;
 		}
 		return std::nullopt;
@@ -458,9 +508,10 @@ void ActivityView::showFileMenu(QPoint globalPos, const VersionRow &row) {
 }
 
 void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
-	auto menu = base::make_unique_q<Ui::PopupMenu>(
+	_menu = base::make_unique_q<Ui::PopupMenu>(
 		this,
 		st::popupMenuWithIcons);
+	auto &menu = _menu;
 	const auto select = [=, this](int index) {
 		if (chipIndex == 0) {
 			_targetFilter = index;
@@ -470,6 +521,7 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 			_statusFilter = index;
 		}
 		_groups.clear();
+		_groupedMessages.clear();
 		_oldestFakeId = 0;
 		_endReached = false;
 		loadPage();
@@ -502,6 +554,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 		if (_failedCount > 0 && pos.x() >= (width() / 4) * 3) {
 			_statusFilter = 3;
 			_groups.clear();
+			_groupedMessages.clear();
 			_oldestFakeId = 0;
 			_endReached = false;
 			loadPage();

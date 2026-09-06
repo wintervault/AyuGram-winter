@@ -386,13 +386,19 @@ void Widget::resizeEvent(QResizeEvent *e) {
 	if (!width() || !height()) {
 		return;
 	}
+	const auto delta = takeTopDelta();
+	auto newScrollTop = _scroll->scrollTop() + delta;
 	_fixedBar->resizeToWidth(width());
 	_fixedBarShadow->resize(width(), st::lineWidth);
+	_fixedBarShadow->moveToLeft(0, _fixedBar->height());
 	_scroll->setGeometry(
 		0,
 		_fixedBar->height(),
 		width(),
 		height() - _fixedBar->height());
+	if (!_scroll->isHidden() && delta) {
+		_scroll->scrollToY(newScrollTop);
+	}
 	if (_content) {
 		_content->resizeToWidth(_scroll->width());
 	}
