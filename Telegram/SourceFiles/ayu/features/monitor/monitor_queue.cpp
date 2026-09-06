@@ -94,16 +94,19 @@ void Dispatch(Task task) {
 				paths.erase(it);
 			}
 		}
-		ChangedStream().fire({});
 		if (!ok && *alive && task.retries < kMaxRetries) {
-			// The row is marked failed by done(ok); retry later keeps
-			// it rescueable (in-memory messages refresh file_reference
+			// The row keeps its pending state; retry later keeps it
+			// rescueable (in-memory messages refresh file_reference
 			// automatically, deleted ones fail for good).
 			task.notBefore = crl::now() + kRetryDelays[task.retries];
 			++task.retries;
 			Queue().push_back(std::move(task));
+			ChangedStream().fire({});
 		} else {
+			// Write the final DB state BEFORE firing: observers read the
+			// database on this event to refresh tiles and rows.
 			task.done(ok);
+			ChangedStream().fire({});
 		}
 		Pump();
 	};
