@@ -8,6 +8,7 @@
 
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
+#include "ayu/ayu_settings.h"
 #include "ayu/features/monitor/monitor.h"
 #include "ayu/ui/monitor/monitor_center.h"
 #include "data/data_peer_id.h"
@@ -29,11 +30,12 @@ namespace MonitorCenter {
 namespace {
 
 constexpr auto kRowHeaderHeight = 48;
-constexpr auto kRowEditorLineHeight = 30;
+constexpr auto kRowEditorLineHeight = 34;
 constexpr auto kRowEditorPad = 12;
-constexpr auto kRowRemoveHeight = 44;
+constexpr auto kRowRemoveHeight = 56;
 
 constexpr auto kTypeCount = 7;
+constexpr auto kEditorRows = (kTypeCount + 1) / 2;
 
 const std::vector<QString> &TypeLabels() {
 	static const auto result = std::vector<QString>{
@@ -137,6 +139,7 @@ private:
 
 	bool _expanded = false;
 	std::vector<Ui::Checkbox*> _typeChecks;
+	std::vector<bool> _globalAllowed;
 	object_ptr<ToggleWidget> _toggle;
 	object_ptr<Ui::SettingsButton> _remove;
 
@@ -247,21 +250,38 @@ TargetsView::Row::Row(
 		AyuFeatures::Monitor::InvalidateTargetsCache();
 	}, _toggle->lifetime());
 
+	const auto &settings = AyuSettings::getInstance();
+	const auto globalAllowed = std::vector<bool>{
+		settings.monitorDownloadPhoto(),
+		settings.monitorDownloadVideo(),
+		settings.monitorDownloadVoice(),
+		settings.monitorDownloadAudio(),
+		settings.monitorDownloadVideoNote(),
+		settings.monitorDownloadGif(),
+		settings.monitorDownloadDocument(),
+	};
+	_globalAllowed = globalAllowed;
 	const auto types = ParseTypes(_target.mediaTypes);
 	const auto empty = _target.mediaTypes.empty();
 	for (auto i = 0; i != kTypeCount; ++i) {
-		const auto checked = empty
-			|| (std::find(
-					types.begin(),
-					types.end(),
-					QString::fromStdString(TypeNames()[i]))
-				!= types.end());
+		const auto allowed = globalAllowed[i];
+		const auto checked = allowed
+			&& (empty
+				|| (std::find(
+						types.begin(),
+						types.end(),
+						QString::fromStdString(TypeNames()[i]))
+					!= types.end()));
 		auto check = object_ptr<Ui::Checkbox>(
 			this,
 			TypeLabels()[i],
 			checked,
 			st::defaultCheckbox);
 		const auto raw = check.data();
+		if (!allowed) {
+			// Locked by the global toggles: shown gray, not editable.
+			raw->setEnabled(false);
+		}
 		raw->checkedChanges(
 		) | rpl::on_next([=](bool) {
 			saveTypes();
@@ -297,6 +317,10 @@ void TargetsView::Row::saveTypes() {
 	auto kept = std::vector<std::string>();
 	auto all = true;
 	for (auto i = 0; i != kTypeCount; ++i) {
+		if (!_globalAllowed[i]) {
+			// Locked by the global toggles: never part of the whitelist.
+			continue;
+		}
 		if (_typeChecks[i]->checked()) {
 			kept.push_back(TypeNames()[i]);
 		} else {
@@ -325,7 +349,7 @@ int TargetsView::Row::resizeGetHeight(int newWidth) {
 	return _expanded
 		? kRowHeaderHeight
 			+ kRowEditorPad + st::normalFont->height + 4
-			+ kTypeCount * kRowEditorLineHeight
+			+ kEditorRows * kRowEditorLineHeight
 			+ kRowEditorPad + kRowRemoveHeight
 		: kRowHeaderHeight;
 }
@@ -339,16 +363,19 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	}
 	_remove->setVisible(_expanded);
 	if (_expanded) {
+		const auto colWidth = (newWidth - 64) / 2;
 		auto y = kRowHeaderHeight
 			+ kRowEditorPad
 			+ st::normalFont->height + 4;
-		for (const auto check : _typeChecks) {
-			check->moveToLeft(32, y);
-			check->resizeToNaturalWidth(newWidth - 64);
-			y += kRowEditorLineHeight;
+		for (auto i = 0; i != kTypeCount; ++i) {
+			_typeChecks[i]->moveToLeft(
+				32 + (i / kEditorRows) * colWidth,
+				y + (i % kEditorRows) * kRowEditorLineHeight);
+			_typeChecks[i]->resizeToNaturalWidth(colWidth - 12);
 		}
+		y += kEditorRows * kRowEditorLineHeight;
 		y += kRowEditorPad;
-		_remove->setGeometry(24, y, newWidth - 48, kRowRemoveHeight - 4);
+		_remove->setGeometry(24, y, newWidth - 48, kRowRemoveHeight - 8);
 	}
 }
 
@@ -379,7 +406,7 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	if (_expanded) {
 		p.setFont(st::normalFont);
 		p.setPen(st::windowSubTextFg);
-		const auto hint = u"Only selected types are downloaded (global toggles still apply)."_q;
+		const auto hint = u"Only selected types are downloaded; grayed-out types are disabled globally."_q;
 		p.drawText(
 			24,
 			kRowHeaderHeight + kRowEditorPad + st::normalFont->height - 4,

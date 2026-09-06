@@ -60,10 +60,12 @@ private:
 	};
 
 	void loadPage();
+	void resetHistory();
 	void refreshFinishedRows(const std::vector<QString> &finished);
 	std::optional<int> hitVersionRow(QPoint pos) const;
 	void showFileMenu(QPoint globalPos, const VersionRow &row);
 	void showFilterMenu(int chipIndex, QPoint globalPos);
+	void clearHistory();
 
 	const not_null<Window::SessionController*> _controller;
 

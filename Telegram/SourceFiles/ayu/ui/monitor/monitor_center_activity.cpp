@@ -19,6 +19,7 @@
 #include "main/main_session.h"
 #include "styles/style_boxes.h"
 #include "styles/style_window.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
@@ -385,6 +386,15 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		chipLeft += chipWidth + 10;
 	}
 	p.fillRect(0, kTilesHeight + kFiltersHeight - 1, w, 1, st::shadowFg);
+	// Destructive "Clear history" action, right-aligned in the filter row.
+	const auto clearText = u"Clear history"_q;
+	const auto clearLeft = w - 16 - metrics.horizontalAdvance(clearText);
+	p.setFont(st::normalFont);
+	p.setPen(st::boxTextFgError);
+	p.drawText(
+		QRect(clearLeft, chipY, w - 16 - clearLeft, 28),
+		style::al_left | style::al_center,
+		clearText);
 
 	// Groups.
 	const auto listTop = kTilesHeight + kFiltersHeight;
@@ -435,23 +445,30 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 			p.drawEllipse(24, rowY + kVersionHeight / 2 - 3, 6, 6);
 
 			p.setFont(st::normalFont);
+			const auto meta = row.meta + (downloading ? u" ·  +1"_q : QString());
+			const auto statusWidth = versionMetrics.horizontalAdvance(status);
+			const auto metaWidth = versionMetrics.horizontalAdvance(meta);
 			p.setPen(st::windowFg);
+			const auto nameLeft = 40;
+			const auto nameWidth = w - nameLeft - 16
+				- statusWidth - 12 - metaWidth - 12;
+			const auto elidedName = (versionMetrics.horizontalAdvance(row.name) > nameWidth)
+				? versionMetrics.elidedText(row.name, Qt::ElideMiddle, nameWidth)
+				: row.name;
 			p.drawText(
-				40,
+				nameLeft,
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
-				row.name);
+				elidedName);
 			p.setPen(st::windowSubTextFg);
-			const auto meta = row.meta + (downloading ? u" ·  +1"_q : QString());
 			p.drawText(
-				w - 16 - versionMetrics.horizontalAdvance(status) - 8
-					- versionMetrics.horizontalAdvance(meta),
+				w - 16 - statusWidth - 12 - metaWidth,
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				meta);
 			p.setPen(downloading ? st::windowActiveTextFg : p.pen());
 			p.drawText(
-				w - 16 - versionMetrics.horizontalAdvance(status),
+				w - 16 - statusWidth,
 				rowY + kVersionHeight / 2 + st::normalFont->height / 2
 					- st::normalFont->descent,
 				status);
@@ -559,6 +576,33 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 	menu->popup(globalPos);
 }
 
+void ActivityView::resetHistory() {
+	_groups.clear();
+	_groupedMessages.clear();
+	_oldestFakeId = 0;
+	_endReached = false;
+	refreshStats();
+	loadPage();
+}
+
+void ActivityView::clearHistory() {
+	const auto session = &_controller->session();
+	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
+	// Guard against view destruction while the (modal) box is up.
+	const auto guard = QPointer<ActivityView>(this);
+	_controller->show(Ui::MakeConfirmBox({
+		.text = u"Clear all download records?\n\nFiles on disk and the event log are not affected."_q,
+		.confirmed = [=](Fn<void()> &&close) {
+			AyuDatabase::Monitor::clearMonitorFiles(userId);
+			close();
+			if (guard) {
+				guard->resetHistory();
+			}
+		},
+		.confirmText = tr::lng_box_delete(),
+	}));
+}
+
 void ActivityView::mousePressEvent(QMouseEvent *e) {
 	const auto pos = e->pos();
 	const auto globalPos = e->globalPos();
@@ -590,6 +634,13 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 				return;
 			}
 			chipLeft += width + 10;
+		}
+		const auto clearText = u"Clear history"_q;
+		const auto clearLeft = width() - 16
+			- metrics.horizontalAdvance(clearText);
+		if (pos.x() >= clearLeft - 8 && pos.x() < width() - 8) {
+			clearHistory();
+			return;
 		}
 		return;
 	}

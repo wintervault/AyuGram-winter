@@ -160,7 +160,7 @@ CenterWindow::CenterWindow(
 			? parent->screen()
 			: QGuiApplication::primaryScreen();
 		const auto available = screen->availableGeometry();
-		auto geometry = QRect(0, 0, 760, 640);
+		auto geometry = QRect(0, 0, 900, 680);
 		geometry.moveCenter(available.center());
 		setGeometry(geometry);
 	}

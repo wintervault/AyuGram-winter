@@ -688,6 +688,15 @@ void removeMonitorTarget(ID userId, ID peerId, ID topicId) {
 	}
 }
 
+void clearMonitorFiles(ID userId) {
+	try {
+		storage.remove_all<MonitorFile>(
+			where(c(&MonitorFile::userId) == userId));
+	} catch (std::exception &ex) {
+		LOG(("Failed to clear monitor files: %1").arg(ex.what()));
+	}
+}
+
 bool hasMonitorFile(ID userId, ID mediaId, const std::string &type) {
 	try {
 		return !storage.select(
