@@ -41,6 +41,8 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	bool eventFilter(QObject *obj, QEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 
 private:
@@ -95,6 +97,11 @@ private:
 	bool _endReached = false;
 	bool _loading = false;
 	int _contentHeight = 0;
+
+	// Destructive "Clear history" pill: geometry cached by paintEvent,
+	// hover highlight derived from the live cursor position.
+	QRect _clearRect;
+	bool _clearHovered = false;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
 	Fn<void()> _scrollToTop;

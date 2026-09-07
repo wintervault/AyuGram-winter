@@ -142,6 +142,9 @@ ActivityView::ActivityView(
 
 	loadPage();
 
+	setMouseTracking(true);
+	installEventFilter(this);
+
 	// Live overlay: repaint on queue changes, refresh rows that just
 	// finished (their DB status moved on since the page was loaded).
 	AyuFeatures::Monitor::QueueChanged(
@@ -448,16 +451,31 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		chipLeft += chipWidth + style::ConvertScale(10);
 	}
 	p.fillRect(0, TilesHeight() + FiltersHeight() - 1, w, 1, st::shadowFg);
-	// Destructive "Clear history" action, right-aligned in the filter row.
+	// Destructive "Clear history" action: a self-contained pill in the
+	// filter row, right-aligned, with a hover highlight (the whole list
+	// is painted, so there is no dedicated button widget).
 	const auto clearText = u"Clear history"_q;
-	const auto clearLeft = w - RightMargin()
-		- metrics.horizontalAdvance(clearText);
+	const auto clearTextWidth = metrics.horizontalAdvance(clearText);
+	const auto clearPad = style::ConvertScale(10);
+	_clearRect = QRect(
+		w - RightMargin() - clearTextWidth - 2 * clearPad,
+		chipY,
+		clearTextWidth + 2 * clearPad,
+		ChipHeight());
+	if (_clearHovered) {
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::boxTextFgError);
+		p.setOpacity(0.1);
+		p.drawRoundedRect(
+			_clearRect,
+			style::ConvertScale(5),
+			style::ConvertScale(5));
+		p.setOpacity(1.0);
+	}
 	p.setFont(st::normalFont);
 	p.setPen(st::boxTextFgError);
-	p.drawText(
-		QRect(clearLeft, chipY, w - RightMargin() - clearLeft, ChipHeight()),
-		style::al_left | style::al_center,
-		clearText);
+	p.drawText(_clearRect, style::al_center, clearText);
 
 	// Groups.
 	const auto listTop = TilesHeight() + FiltersHeight();
@@ -657,6 +675,35 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 	menu->popup(globalPos);
 }
 
+void ActivityView::mouseMoveEvent(QMouseEvent *e) {
+	const auto over = _clearRect.contains(e->pos());
+	if (over != _clearHovered) {
+		_clearHovered = over;
+		// Repaint only the pill: the list itself is not affected.
+		update(_clearRect.marginsAdded(QMargins(
+			style::ConvertScale(4),
+			style::ConvertScale(4),
+			style::ConvertScale(4),
+			style::ConvertScale(4))));
+	}
+	setCursor(over ? style::cur_pointer : style::cur_default);
+	Ui::RpWidget::mouseMoveEvent(e);
+}
+
+bool ActivityView::eventFilter(QObject *obj, QEvent *e) {
+	if (obj == this && e->type() == QEvent::Leave && _clearHovered) {
+		// The cursor left the view while over the pill: clear the
+		// highlight (RpWidget finalizes leaveEvent, hence the filter).
+		_clearHovered = false;
+		update(_clearRect.marginsAdded(QMargins(
+			style::ConvertScale(4),
+			style::ConvertScale(4),
+			style::ConvertScale(4),
+			style::ConvertScale(4))));
+	}
+	return Ui::RpWidget::eventFilter(obj, e);
+}
+
 void ActivityView::resetHistory() {
 	_groups.clear();
 	_groupedMessages.clear();
@@ -718,11 +765,7 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			}
 			chipLeft += width + style::ConvertScale(10);
 		}
-		const auto clearText = u"Clear history"_q;
-		const auto clearLeft = width() - RightMargin()
-			- metrics.horizontalAdvance(clearText);
-		if (pos.x() >= clearLeft - style::ConvertScale(8)
-			&& pos.x() < width() - RightMargin()) {
+		if (_clearRect.contains(pos)) {
 			clearHistory();
 			return;
 		}
