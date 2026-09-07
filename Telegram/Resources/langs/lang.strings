@@ -9043,7 +9043,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_MonitorOpenDownloads" = "Open downloads folder";
 "ayu_MonitorNameTemplate" = "File name template";
 "ayu_MonitorNameTemplatePlaceholder" = "Path template relative to the save root";
-"ayu_MonitorNameTemplateVars" = "Variables in curly braces: chat_title, chat_id, topic_id, msg_id, media_id, type, ext, orig_name, date (yyyy-MM-dd). An empty template resets to the default.";
+"ayu_MonitorNameTemplateVars" = "Variables in curly braces: chat_title, chat_id, topic, topic_id, msg_id, media_id, type, ext, orig_name, date (yyyy-MM-dd). The topic segment is empty for chats without topics. An empty template resets to the default.";
 "ayu_MonitorMaxFileSize" = "Max file size";
 "ayu_MonitorMinDiskSpace" = "Keep free disk space";
 "ayu_MonitorUnlimited" = "Unlimited";

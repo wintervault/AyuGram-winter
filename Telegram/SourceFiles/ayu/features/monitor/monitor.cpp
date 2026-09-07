@@ -152,18 +152,21 @@ struct PendingMedia {
 		return QString();
 	}
 	const auto rootId = item->topicRootId().bare;
-	if (rootId == Data::ForumTopic::kGeneralId) {
-		return u"General"_q;
-	}
 	if (const auto channel = peer->asChannel()) {
 		if (const auto forum = channel->forum()) {
 			if (const auto topic = forum->topicFor(MsgId(rootId))) {
-				return topic->title();
+				auto title = topic->title();
+				if (!title.isEmpty()) {
+					return title;
+				}
 			}
 		}
 	}
-	// Topic not (yet) loaded: fall back to the numeric id.
-	return u"#%1"_q.arg(rootId);
+	// Topic not (yet) loaded or has no title: fall back to a readable
+	// name for General and the numeric id for anything else.
+	return (rootId == Data::ForumTopic::kGeneralId)
+		? u"General"_q
+		: u"#%1"_q.arg(rootId);
 }
 
 [[nodiscard]] MediaType ClassifyDocument(not_null<DocumentData*> document) {
@@ -339,19 +342,22 @@ void AppendEvent(
 
 // Config-driven skips can fire for every message in a high-traffic
 // channel and would flush the shared event log ring; throttle them
-// per target and reason.
+// per target and reason. The topic is part of the key so that a forum
+// mixing per-topic policies doesn't swallow one topic's skip into
+// another's.
 void AppendSkipEvent(
 		ID userId,
 		int level,
 		ID peerId,
+		ID topicId,
 		int messageId,
 		const QString &reason,
 		const QString &text) {
 	constexpr auto kThrottle = 60 * crl::time(1000);
-	using Key = std::tuple<ID, ID, QString>;
+	using Key = std::tuple<ID, ID, ID, QString>;
 	static std::map<Key, crl::time> last;
 	const auto now = crl::now();
-	const auto key = Key{ userId, peerId, reason };
+	const auto key = Key{ userId, peerId, topicId, reason };
 	const auto it = last.find(key);
 	if (it != last.end() && now - it->second < kThrottle) {
 		return;
@@ -412,6 +418,11 @@ void AppendSkipEvent(
 		// Documents without any extension would land on disk with a
 		// blank suffix, which makes them hard to open.
 		if (QFileInfo(origName).suffix().isEmpty()) {
+			// A trailing dot ("name.") would double up with the
+			// appended one.
+			while (!origName.isEmpty() && origName.endsWith('.')) {
+				origName.chop(1);
+			}
 			const auto ext = DocumentExtensionFallback(
 				media.document,
 				media.type);
@@ -527,6 +538,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 			userId,
 			0,
 			peerId,
+			item->topicRootId().bare,
 			msgId,
 			u"target-type"_q,
 			u"type not allowed by target: %1"_q.arg(TypeName(media.type)));
@@ -551,6 +563,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 			userId,
 			1,
 			peerId,
+			item->topicRootId().bare,
 			msgId,
 			u"oversize"_q,
 			u"oversize: %1"_q.arg(expectedSize));
@@ -570,6 +583,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 				userId,
 				1,
 				peerId,
+				item->topicRootId().bare,
 				msgId,
 				u"low-disk"_q,
 				u"low disk space: %1 MB free"_q.arg(available / (1024 * 1024)));
