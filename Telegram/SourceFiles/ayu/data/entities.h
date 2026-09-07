@@ -207,6 +207,9 @@ struct MonitorFilePage
 struct MonitorTargetStats
 {
 	ID peerId = 0;
+	// Message topic the download records belong to (always non-zero,
+	// see topicRootId()). Stats are aggregated per (peerId, topicId).
+	ID topicId = 0;
 	int doneCount = 0;
 	int64 doneBytes = 0;
 	int failedCount = 0;

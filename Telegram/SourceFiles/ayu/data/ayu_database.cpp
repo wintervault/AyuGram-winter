@@ -902,48 +902,60 @@ std::vector<MonitorFile> getMonitorVersions(ID userId, ID peerId, int messageId)
 std::vector<MonitorTargetStats> getTargetStats(ID userId) {
 	try {
 		auto result = std::vector<MonitorTargetStats>();
-		auto done = std::map<ID, std::pair<int, int64>>();
+		// Aggregate per (peerId, topicId): a forum mixing chat-level and
+		// topic-level targets shows each row its own scope, the chat
+		// totals are summed up by the caller.
+		using Key = std::pair<ID, ID>;
+		auto done = std::map<Key, std::pair<int, int64>>();
 		auto doneRows = storage.select(
 			columns(
 				&MonitorFile::peerId,
+				&MonitorFile::topicId,
 				count(&MonitorFile::fakeId),
 				sum(&MonitorFile::fileSize)),
 			where(
 				c(&MonitorFile::userId) == userId &&
 				c(&MonitorFile::status) == int(MonitorFileStatus::done)),
-			group_by(&MonitorFile::peerId));
+			group_by(&MonitorFile::peerId, &MonitorFile::topicId));
 		for (auto &row : doneRows) {
 			auto bytes = int64(0);
-			if (const auto &sumBytes = std::get<2>(row)) {
+			if (const auto &sumBytes = std::get<3>(row)) {
 				bytes = int64(*sumBytes);
 			}
-			done.emplace(std::get<0>(row), std::make_pair(std::get<1>(row), bytes));
+			done.emplace(
+				Key{ std::get<0>(row), std::get<1>(row) },
+				std::make_pair(std::get<2>(row), bytes));
 		}
 		auto failedRows = storage.select(
 			columns(
 				&MonitorFile::peerId,
+				&MonitorFile::topicId,
 				count(&MonitorFile::fakeId)),
 			where(
 				c(&MonitorFile::userId) == userId &&
 				c(&MonitorFile::status) == int(MonitorFileStatus::failed)),
-			group_by(&MonitorFile::peerId));
-		auto failed = std::map<ID, int>();
+			group_by(&MonitorFile::peerId, &MonitorFile::topicId));
+		auto failed = std::map<Key, int>();
 		for (auto &row : failedRows) {
-			failed.emplace(std::get<0>(row), std::get<1>(row));
+			failed.emplace(
+				Key{ std::get<0>(row), std::get<1>(row) },
+				std::get<2>(row));
 		}
-		for (const auto &[peerId, doneStats] : done) {
+		for (const auto &[key, doneStats] : done) {
 			auto stats = MonitorTargetStats();
-			stats.peerId = peerId;
+			stats.peerId = key.first;
+			stats.topicId = key.second;
 			stats.doneCount = doneStats.first;
 			stats.doneBytes = doneStats.second;
-			const auto it = failed.find(peerId);
+			const auto it = failed.find(key);
 			stats.failedCount = (it != failed.end()) ? it->second : 0;
-			failed.erase(peerId);
+			failed.erase(key);
 			result.push_back(stats);
 		}
-		for (const auto &[peerId, failedCount] : failed) {
+		for (const auto &[key, failedCount] : failed) {
 			auto stats = MonitorTargetStats();
-			stats.peerId = peerId;
+			stats.peerId = key.first;
+			stats.topicId = key.second;
 			stats.failedCount = failedCount;
 			result.push_back(stats);
 		}

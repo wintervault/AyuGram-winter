@@ -174,23 +174,46 @@ void TargetsView::reload() {
 
 	const auto session = &_controller->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
-	auto done = std::map<long long, int>();
-	auto failed = std::map<long long, int>();
-	auto bytes = std::map<long long, int64>();
+	// Per-topic stats for topic targets, per-peer totals for chat-level
+	// ones (their scope is the whole chat, topics included).
+	struct Stats {
+		int done = 0;
+		int64 bytes = 0;
+		int failed = 0;
+	};
+	auto perTopic = std::map<std::pair<long long, long long>, Stats>();
+	auto perPeer = std::map<long long, Stats>();
 	for (const auto &entry : AyuDatabase::Monitor::getTargetStats(userId)) {
-		done.emplace(entry.peerId, entry.doneCount);
-		failed.emplace(entry.peerId, entry.failedCount);
-		bytes.emplace(entry.peerId, entry.doneBytes);
+		auto &topic = perTopic[std::make_pair(entry.peerId, entry.topicId)];
+		topic.done += entry.doneCount;
+		topic.bytes += entry.doneBytes;
+		topic.failed += entry.failedCount;
+		auto &peer = perPeer[entry.peerId];
+		peer.done += entry.doneCount;
+		peer.bytes += entry.doneBytes;
+		peer.failed += entry.failedCount;
 	}
+	const auto lookup = [&](const MonitorTarget &target) {
+		if (target.topicId != 0) {
+			const auto it = perTopic.find(
+				std::make_pair(target.peerId, target.topicId));
+			return (it != perTopic.end())
+				? it->second
+				: Stats{};
+		}
+		const auto it = perPeer.find(target.peerId);
+		return (it != perPeer.end()) ? it->second : Stats{};
+	};
 
 	for (const auto &target : AyuDatabase::Monitor::getAllMonitorTargets(userId)) {
+		const auto stats = lookup(target);
 		auto row = object_ptr<Row>(
 			this,
 			_controller,
 			target,
-			done.contains(target.peerId) ? done[target.peerId] : 0,
-			bytes.contains(target.peerId) ? bytes[target.peerId] : 0,
-			failed.contains(target.peerId) ? failed[target.peerId] : 0,
+			stats.done,
+			stats.bytes,
+			stats.failed,
 			[=, guard = QPointer<TargetsView>(this)] {
 				// Overlay confirm callbacks may run after this view was
 				// destroyed by a view switch.
