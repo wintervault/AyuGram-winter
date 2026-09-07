@@ -13734,6 +13734,7 @@ namespace sqlite_orm {
 
 #include "sqlite3.h"
 #include <atomic>
+#include <mutex>  //  std::recursive_mutex, AyuGram: connection serialization
 #include <string>  //  std::string
 
 // #include "error_code.h"
@@ -13772,19 +13773,37 @@ namespace sqlite_orm {
                 return this->_retain_count;
             }
 
+            // AyuGram: serialize open/close/retain against concurrent
+            // queries. The retain/release transitions that open and close
+            // the connection are not atomic as a whole, so two threads
+            // racing get_connection() can observe a null or closed db
+            // (surfacing as SQLITE_NOMEM). A recursive mutex held for the
+            // whole connection_ref lifetime closes that window.
+            std::recursive_mutex &mutex() {
+                return this->_mutex;
+            }
+
             const std::string filename;
 
           protected:
             sqlite3* db = nullptr;
             std::atomic_int _retain_count{};
+            std::recursive_mutex _mutex;
         };
 
         struct connection_ref {
+            using lock_t = std::unique_lock<std::recursive_mutex>;
+
+            // AyuGram: hold the holder's mutex for this reference's whole
+            // lifetime (RAII query window). Copies share the same lock so
+            // the mutex stays held until the last reference dies.
             connection_ref(connection_holder& holder) : holder(&holder) {
+                this->lock = std::make_shared<lock_t>(holder.mutex());
                 this->holder->retain();
             }
 
             connection_ref(const connection_ref& other) : holder(other.holder) {
+                this->lock = other.lock;
                 this->holder->retain();
             }
 
@@ -13793,6 +13812,7 @@ namespace sqlite_orm {
                 if (other.holder != this->holder) {
                     this->holder->release();
                     this->holder = other.holder;
+                    this->lock = other.lock;
                     this->holder->retain();
                 }
 
@@ -13809,6 +13829,7 @@ namespace sqlite_orm {
 
           private:
             connection_holder* holder = nullptr;
+            std::shared_ptr<lock_t> lock;
         };
     }
 }
@@ -18042,6 +18063,8 @@ namespace sqlite_orm {
             }
 
             void commit() {
+                // AyuGram: serialize against concurrent connections use.
+                std::lock_guard<std::recursive_mutex> lock(this->connection->mutex());
                 sqlite3* db = this->connection->get();
                 perform_void_exec(db, "COMMIT");
                 this->connection->release();
@@ -18051,6 +18074,8 @@ namespace sqlite_orm {
             }
 
             void rollback() {
+                // AyuGram: serialize against concurrent connections use.
+                std::lock_guard<std::recursive_mutex> lock(this->connection->mutex());
                 sqlite3* db = this->connection->get();
                 perform_void_exec(db, "ROLLBACK");
                 this->connection->release();
@@ -18167,6 +18192,8 @@ namespace sqlite_orm {
             }
 
             void begin_transaction_internal(const std::string& query) {
+                // AyuGram: serialize against concurrent connections use.
+                std::lock_guard<std::recursive_mutex> lock(this->connection->mutex());
                 this->connection->retain();
                 if (1 == this->connection->retain_count()) {
                     this->on_open_internal(this->connection->get());
