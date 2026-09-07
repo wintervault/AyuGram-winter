@@ -73,7 +73,8 @@ void init() {
 	initUiSettings();
 	initIcon();
 	initWorker();
-	initRCManager();
+	// AyuGram winter: remote config disabled (personal build)
+	// initRCManager();
 	initTranslator();
 }
 
