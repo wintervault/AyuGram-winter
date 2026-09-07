@@ -462,6 +462,10 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 		chipY,
 		clearTextWidth + 2 * clearPad,
 		ChipHeight());
+	// Live-cursor hover (same pattern as the remove action): rederived
+	// on every repaint, so scroll exposures and full repaints after
+	// overlay dismissal always agree with the real cursor position.
+	_clearHovered = _clearRect.contains(mapFromGlobal(QCursor::pos()));
 	if (_clearHovered) {
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
@@ -678,28 +682,21 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 void ActivityView::mouseMoveEvent(QMouseEvent *e) {
 	const auto over = _clearRect.contains(e->pos());
 	if (over != _clearHovered) {
+		// Full repaint: a cached-rect partial update can miss the new
+		// pill position after a resize.
 		_clearHovered = over;
-		// Repaint only the pill: the list itself is not affected.
-		update(_clearRect.marginsAdded(QMargins(
-			style::ConvertScale(4),
-			style::ConvertScale(4),
-			style::ConvertScale(4),
-			style::ConvertScale(4))));
+		update();
 	}
 	setCursor(over ? style::cur_pointer : style::cur_default);
 	Ui::RpWidget::mouseMoveEvent(e);
 }
 
 bool ActivityView::eventFilter(QObject *obj, QEvent *e) {
-	if (obj == this && e->type() == QEvent::Leave && _clearHovered) {
-		// The cursor left the view while over the pill: clear the
-		// highlight (RpWidget finalizes leaveEvent, hence the filter).
-		_clearHovered = false;
-		update(_clearRect.marginsAdded(QMargins(
-			style::ConvertScale(4),
-			style::ConvertScale(4),
-			style::ConvertScale(4),
-			style::ConvertScale(4))));
+	if (obj == this
+		&& (e->type() == QEvent::Leave || e->type() == QEvent::Enter)) {
+		// Enter fires when a covering overlay (the confirm card) is
+		// dismissed with the cursor over the pill; rederive then.
+		update();
 	}
 	return Ui::RpWidget::eventFilter(obj, e);
 }

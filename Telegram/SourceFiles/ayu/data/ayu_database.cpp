@@ -292,14 +292,23 @@ void initialize() {
 }
 
 void addEditedMessage(const EditedMessage &message) {
+	// The rollback in the catch must only run if THIS transaction was
+	// actually started: a concurrent writer's transaction could be the
+	// open one (begin fails with "within a transaction"), and rolling
+	// that back would silently discard its insert.
+	auto began = false;
 	try {
 		storage.begin_transaction();
+		began = true;
 		storage.insert(message);
 		storage.commit();
+		began = false;
 	} catch (std::exception &ex) {
-		try {
-			storage.rollback();
-		} catch (...) {
+		if (began) {
+			try {
+				storage.rollback();
+			} catch (...) {
+			}
 		}
 		LOG(("Failed to save edited message for some reason: %1").arg(ex.what()));
 	}
@@ -337,16 +346,21 @@ bool hasRevisions(ID userId, ID dialogId, ID messageId) {
 }
 
 void addDeletedMessage(const DeletedMessage &message) {
+	auto began = false;
 	try {
 		storage.begin_transaction();
+		began = true;
 		storage.insert(message);
 		storage.commit();
+		began = false;
 	} catch (std::exception &ex) {
-		try {
-			storage.rollback();
-		} catch (...) {
+		if (began) {
+			try {
+				storage.rollback();
+			} catch (...) {
+			}
 		}
-		LOG(("Failed to save edited message for some reason: %1").arg(ex.what()));
+		LOG(("Failed to save deleted message for some reason: %1").arg(ex.what()));
 	}
 }
 
@@ -515,28 +529,38 @@ std::vector<RegexFilter> getByDialogId(ID dialogId) {
 }
 
 void addRegexFilter(const RegexFilter &filter) {
+	auto began = false;
 	try {
 		storage.begin_transaction();
+		began = true;
 		storage.replace(filter); // we're using replace as we set std::vector<char> as primary key
 		storage.commit();
+		began = false;
 	} catch (std::exception &ex) {
-		try {
-			storage.rollback();
-		} catch (...) {
+		if (began) {
+			try {
+				storage.rollback();
+			} catch (...) {
+			}
 		}
 		LOG(("Failed to save regex filter for some reason: %1").arg(ex.what()));
 	}
 }
 
 void addRegexExclusion(const RegexFilterGlobalExclusion &exclusion) {
+	auto began = false;
 	try {
 		storage.begin_transaction();
+		began = true;
 		storage.insert(exclusion);
 		storage.commit();
+		began = false;
 	} catch (std::exception &ex) {
-		try {
-			storage.rollback();
-		} catch (...) {
+		if (began) {
+			try {
+				storage.rollback();
+			} catch (...) {
+			}
 		}
 		LOG(("Failed to save regex filter exclusion for some reason: %1").arg(ex.what()));
 	}

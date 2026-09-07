@@ -324,13 +324,25 @@ TargetsView::Row::Row(
 	}
 	// The remove-hover highlight is computed from the live cursor
 	// position, so a Leave event has to trigger a repaint or the last
-	// hovered state stays painted after the cursor moves away.
+	// hovered state stays painted after the cursor moves away. Child
+	// widgets are filtered too: a fast move into a checkbox is
+	// redirected to the child, and neither a Row move nor a Leave fires.
 	installEventFilter(this);
+	for (const auto check : _typeChecks) {
+		check->installEventFilter(this);
+	}
+	_toggle->installEventFilter(this);
 	setMouseTracking(true);
 }
 
 bool TargetsView::Row::eventFilter(QObject *obj, QEvent *e) {
-	if (obj == this && e->type() == QEvent::Leave) {
+	const auto type = e->type();
+	if ((type == QEvent::Leave || type == QEvent::Enter)
+		&& (obj == this || obj == _toggle.data()
+			|| std::find(
+				_typeChecks.begin(),
+				_typeChecks.end(),
+				static_cast<Ui::Checkbox*>(obj)) != _typeChecks.end())) {
 		update();
 	}
 	return Ui::RpWidget::eventFilter(obj, e);
