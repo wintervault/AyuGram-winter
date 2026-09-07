@@ -18,6 +18,7 @@
 #include "styles/style_boxes.h"
 #include "styles/style_settings.h"
 #include "styles/style_window.h"
+#include "styles/style_widgets.h"
 #include "ui/painter.h"
 #include "ui/style/style_core_scale.h"
 #include "ui/widgets/checkbox.h"
@@ -136,6 +137,7 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
+	bool eventFilter(QObject *obj, QEvent *e) override;
 
 private:
 	void saveTypes();
@@ -319,7 +321,18 @@ TargetsView::Row::Row(
 	for (const auto check : _typeChecks) {
 		check->hide();
 	}
+	// The remove-hover highlight is computed from the live cursor
+	// position, so a Leave event has to trigger a repaint or the last
+	// hovered state stays painted after the cursor moves away.
+	installEventFilter(this);
 	setMouseTracking(true);
+}
+
+bool TargetsView::Row::eventFilter(QObject *obj, QEvent *e) {
+	if (obj == this && e->type() == QEvent::Leave) {
+		update();
+	}
+	return Ui::RpWidget::eventFilter(obj, e);
 }
 
 void TargetsView::Row::saveTypes() {
@@ -374,11 +387,14 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 	for (const auto check : _typeChecks) {
 		check->setVisible(_expanded);
 	}
-	// Checkboxes are style-scaled widgets: measure the real control
-	// height, a fixed line height smaller than it causes overlap.
+	// Checkbox widgets are tall because their style reserves a big
+	// transparent ripple padding around the visible check (widget height
+	// ~76 at 2x vs the 44 check itself). Base the line height on the
+	// visible check diameter plus breathing room, not on the widget
+	// height, otherwise each row shows a large empty gap.
 	_editorLineHeight = std::max(
-		_typeChecks[0]->height() + style::ConvertScale(4),
-		style::ConvertScale(20));
+		st::defaultCheck.diameter + style::ConvertScale(10),
+		st::normalFont->height + style::ConvertScale(10));
 	if (_expanded) {
 		const auto checkHeight = _typeChecks[0]->height();
 		const auto lineHeight = _editorLineHeight;
