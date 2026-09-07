@@ -793,6 +793,9 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 			}
 			chipLeft += width + style::ConvertScale(10);
 		}
+		// Pills are painted above the chips, so hit-test them first
+		// (draw order and hit order must agree, even when they overlap
+		// at narrow widths).
 		if (_clearRect.contains(pos)) {
 			clearHistory();
 			return;

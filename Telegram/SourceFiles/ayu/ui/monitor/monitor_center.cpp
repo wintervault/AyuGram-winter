@@ -260,10 +260,14 @@ void CenterWindow::showView(View view, bool force) {
 			object_ptr<TargetsView>(
 				body(),
 				_controller,
-				[=] {
+				[this, guard = QPointer<CenterWindow>(this)] {
 					// Rebuild the view after a target removal: it is
-					// the only render path that is reliably clean.
-					showView(View::targets, true);
+					// the only render path that is reliably clean. The
+					// callback is queued (crl::on_main) and can
+					// outlive the window in theory, hence the guard.
+					if (guard) {
+						showView(View::targets, true);
+					}
 				}));
 	}
 	if (_view == View::activity && _activity) {

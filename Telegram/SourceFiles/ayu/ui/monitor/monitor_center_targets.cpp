@@ -23,6 +23,7 @@
 #include "ui/style/style_core_scale.h"
 #include "ui/widgets/checkbox.h"
 #include "window/window_session_controller.h"
+#include "base/algorithm.h"
 
 #include <algorithm>
 #include <map>
@@ -176,7 +177,12 @@ TargetsView::TargetsView(
 }
 
 void TargetsView::reload() {
-	_rows.clear();
+	// Rows have a Qt parent, so object_ptr destruction on its own would
+	// NOT delete them (it skips parented objects) — they would linger
+	// as visible, clickable orphans while the fresh rows stay hidden.
+	for (auto &row : base::take(_rows)) {
+		delete row.data();
+	}
 
 	const auto session = &_controller->session();
 	const auto userId = session->userId().bare & PeerId::kChatTypeMask;
@@ -230,11 +236,11 @@ void TargetsView::reload() {
 		_rows.push_back(std::move(row));
 	}
 	resizeToWidth(width());
-	// Repaint every row explicitly as well: a plain update() on the
-	// parent alone can lose child paint dispatches when rows were
-	// deleted, recreated and repositioned in the same event-loop round,
-	// which used to leave stale fragments with dead click areas.
+	// The view may already be visible here: child widgets created on a
+	// visible parent are NOT shown automatically, so show every row
+	// explicitly, then force a repaint of each one.
 	for (const auto &row : _rows) {
+		row->show();
 		row->update();
 	}
 	update();
@@ -259,19 +265,6 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	p.fillRect(e->rect(), st::boxBg);
 
-	if (_rows.empty()) {
-		p.setFont(st::normalFont);
-		p.setPen(st::windowSubTextFg);
-		p.drawText(
-			rect().marginsRemoved(QMargins(
-				style::ConvertScale(12),
-				style::ConvertScale(12),
-				style::ConvertScale(12),
-				style::ConvertScale(12))),
-			style::al_center | Qt::TextWordWrap,
-			u"No monitored chats yet.\nUse the chat context menu to add one."_q);
-		return;
-	}
 	p.setFont(st::normalFont);
 	p.setPen(st::windowSubTextFg);
 	p.drawText(
@@ -280,7 +273,9 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 		u"Targets (add via the chat context menu)"_q);
 
 	// "Refresh" pill, right-aligned in the title strip: force-reloads
-	// the target list and its per-target stats.
+	// the target list and its per-target stats. Painted in the empty
+	// state too — it is the only way to pick up targets added elsewhere
+	// without leaving the page.
 	const auto refreshText = u"Refresh"_q;
 	const auto metrics = QFontMetrics(st::normalFont);
 	const auto refreshWidth = metrics.horizontalAdvance(refreshText)
@@ -311,6 +306,17 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 		width(),
 		1,
 		st::shadowFg);
+
+	if (_rows.empty()) {
+		p.drawText(
+			QRect(
+				0,
+				TitleHeight(),
+				width(),
+				height() - TitleHeight()),
+			style::al_center | Qt::TextWordWrap,
+			u"No monitored chats yet.\nUse the chat context menu to add one."_q);
+	}
 }
 
 void TargetsView::mousePressEvent(QMouseEvent *e) {
