@@ -22,7 +22,7 @@ class Session;
 namespace AyuFeatures::Monitor {
 
 // Keep monitor downloads from crowding out manual ones.
-inline constexpr auto kMaxConcurrent = 3;
+inline constexpr auto kMaxConcurrent = 5;
 
 void EnqueueDocumentDownload(
 	not_null<Main::Session*> session,

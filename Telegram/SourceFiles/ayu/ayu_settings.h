@@ -752,10 +752,10 @@ private:
 	rpl::variable<bool> _monitorDownloadVoice = true;
 	rpl::variable<bool> _monitorDownloadAudio = true;
 	rpl::variable<bool> _monitorDownloadVideoNote = true;
-	rpl::variable<bool> _monitorDownloadGif = true;
+	rpl::variable<bool> _monitorDownloadGif = false;
 	rpl::variable<bool> _monitorDownloadDocument = false;
-	rpl::variable<int> _monitorMaxFileSizeMB = 0;
-	rpl::variable<int> _monitorMinDiskSpaceMB = 1024;
+	rpl::variable<int> _monitorMaxFileSizeMB = 1024;
+	rpl::variable<int> _monitorMinDiskSpaceMB = 0;
 
 	rpl::variable<bool> _useGlobalGhostMode = true;
 	std::map<uint64, std::unique_ptr<GhostModeAccountSettings>> _ghostAccounts;

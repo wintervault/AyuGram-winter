@@ -14,6 +14,7 @@
 #include "ayu/utils/telegram_helpers.h"
 #include "base/unixtime.h"
 #include "core/application.h"
+#include "core/mime_type.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
@@ -101,6 +102,40 @@ struct PendingMedia {
 		segment.chop(1);
 	}
 	return segment;
+}
+
+// Telegram documents frequently carry no filename attribute (channel
+// videos especially), and even the ones that do may lack an extension.
+// Derive a reasonable extension from the mime type, mirroring the
+// export module's ComputeDocumentName.
+[[nodiscard]] QString DocumentExtensionFallback(
+		not_null<DocumentData*> document,
+		MediaType type) {
+	const auto mimeString = document->mimeString();
+	if (type == MediaType::voice && !mimeString.compare(
+			u"audio/mp3"_q,
+			Qt::CaseInsensitive)) {
+		return u"mp3"_q;
+	}
+	const auto patterns = Core::MimeTypeForName(mimeString).globPatterns();
+	if (!patterns.isEmpty()) {
+		auto ext = patterns.front();
+		ext.remove(u'*');
+		if (ext.startsWith('.')) {
+			ext.remove(0, 1);
+		}
+		if (!ext.isEmpty()) {
+			return ext;
+		}
+	}
+	switch (type) {
+	case MediaType::voice: return u"ogg"_q;
+	case MediaType::video:
+	case MediaType::videoNote:
+	case MediaType::gif: return u"mp4"_q;
+	case MediaType::audio: return u"mp3"_q;
+	default: return QString();
+	}
 }
 
 [[nodiscard]] MediaType ClassifyDocument(not_null<DocumentData*> document) {
@@ -320,6 +355,16 @@ void AppendSkipEvent(
 		origName = media.document->filename();
 		if (origName.isEmpty()) {
 			origName = u"file_%1"_q.arg(media.mediaId);
+		}
+		// Documents without any extension would land on disk with a
+		// blank suffix, which makes them hard to open.
+		if (QFileInfo(origName).suffix().isEmpty()) {
+			const auto ext = DocumentExtensionFallback(
+				media.document,
+				media.type);
+			if (!ext.isEmpty()) {
+				origName += '.' + ext;
+			}
 		}
 	} else {
 		origName = u"photo_%1.jpg"_q.arg(media.mediaId);
