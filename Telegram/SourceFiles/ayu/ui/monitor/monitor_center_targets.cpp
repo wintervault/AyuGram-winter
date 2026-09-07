@@ -155,6 +155,7 @@ private:
 	std::vector<Ui::Checkbox*> _typeChecks;
 	std::vector<bool> _globalAllowed;
 	int _editorLineHeight = 0;
+	int _checkHeight = 0;
 	QRect _removeRect;
 	object_ptr<ToggleWidget> _toggle;
 
@@ -372,10 +373,13 @@ void TargetsView::Row::saveTypes() {
 
 int TargetsView::Row::resizeGetHeight(int newWidth) {
 	updateChildrenGeometry(newWidth);
+	const auto centering = (_checkHeight - _editorLineHeight) / 2;
 	return _expanded
 		? RowHeaderHeight()
 			+ RowEditorPad() + st::normalFont->height + style::ConvertScale(7)
+			+ style::ConvertScale(8) + centering
 			+ kEditorRows * _editorLineHeight
+			+ style::ConvertScale(8) + centering
 			+ RowEditorPad() + RowRemoveHeight()
 		: RowHeaderHeight();
 }
@@ -396,20 +400,29 @@ void TargetsView::Row::updateChildrenGeometry(int newWidth) {
 		st::defaultCheck.diameter + style::ConvertScale(10),
 		st::normalFont->height + style::ConvertScale(10));
 	if (_expanded) {
-		const auto checkHeight = _typeChecks[0]->height();
+		_checkHeight = _typeChecks[0]->height();
 		const auto lineHeight = _editorLineHeight;
+		// The first checkbox row starts after a fixed gap below the
+		// hint line, compensated for the negative centering offset of
+		// the tall checkbox widgets; otherwise the labels touch the
+		// hint text. The same compensation is applied after the last
+		// row so its transparent bottom padding keeps clear of the
+		// remove action.
+		const auto centering = (_checkHeight - lineHeight) / 2;
 		const auto colWidth = (newWidth - style::ConvertScale(32)) / 2;
 		auto y = RowHeaderHeight()
 			+ RowEditorPad()
-			+ st::normalFont->height + style::ConvertScale(7);
+			+ st::normalFont->height + style::ConvertScale(7)
+			+ style::ConvertScale(8) + centering;
 		for (auto i = 0; i != kTypeCount; ++i) {
 			_typeChecks[i]->moveToLeft(
 				style::ConvertScale(16) + (i / kEditorRows) * colWidth,
 				y + (i % kEditorRows) * lineHeight
-					+ (lineHeight - checkHeight) / 2);
+					+ (lineHeight - _checkHeight) / 2);
 			_typeChecks[i]->resizeToNaturalWidth(colWidth - style::ConvertScale(6));
 		}
 		y += kEditorRows * lineHeight;
+		y += style::ConvertScale(8) + centering;
 		y += RowEditorPad();
 		// Self-drawn destructive action, centered; no background fill so
 		// the row separator under it stays uninterrupted.
@@ -517,9 +530,10 @@ void TargetsView::Row::mouseMoveEvent(QMouseEvent *e) {
 	const auto overRemove = _expanded
 		&& _removeRect.contains(e->pos());
 	setCursor(overRemove ? style::cur_pointer : style::cur_default);
-	if (overRemove || _removeRect.contains(mapFromGlobal(QCursor::pos()))) {
-		update();
-	}
+	// Repaint unconditionally: the hover state is derived from the live
+	// cursor in paintEvent, and leaving the remove rect inside this row
+	// must clear the highlight even though no Leave event fires.
+	update();
 	Ui::RpWidget::mouseMoveEvent(e);
 }
 
