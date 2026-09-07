@@ -166,6 +166,10 @@ TargetsView::TargetsView(
 	not_null<Window::SessionController*> controller)
 : Ui::RpWidget(parent)
 , _controller(controller) {
+	// Live-cursor hover for the title-strip refresh pill: repaint on
+	// Leave (cursor out) and Enter (overlay dismissed above us).
+	setMouseTracking(true);
+	installEventFilter(this);
 	reload();
 }
 
@@ -225,6 +229,13 @@ void TargetsView::reload() {
 		_rows.push_back(std::move(row));
 	}
 	resizeToWidth(width());
+	// Repaint every row explicitly as well: a plain update() on the
+	// parent alone can lose child paint dispatches when rows were
+	// deleted, recreated and repositioned in the same event-loop round,
+	// which used to leave stale fragments with dead click areas.
+	for (const auto &row : _rows) {
+		row->update();
+	}
 	update();
 }
 
@@ -266,12 +277,68 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 		style::ConvertScale(8),
 		TitleHeight() - st::normalFont->descent - style::ConvertScale(6),
 		u"Targets (add via the chat context menu)"_q);
+
+	// "Refresh" pill, right-aligned in the title strip: force-reloads
+	// the target list and its per-target stats.
+	const auto refreshText = u"Refresh"_q;
+	const auto metrics = QFontMetrics(st::normalFont);
+	const auto refreshWidth = metrics.horizontalAdvance(refreshText)
+		+ 2 * style::ConvertScale(10);
+	const auto refreshHeight = st::normalFont->height
+		+ 2 * style::ConvertScale(6);
+	_refreshRect = QRect(
+		width() - style::ConvertScale(16) - refreshWidth,
+		(TitleHeight() - refreshHeight) / 2,
+		refreshWidth,
+		refreshHeight);
+	_refreshHovered = _refreshRect.contains(mapFromGlobal(QCursor::pos()));
+	if (_refreshHovered) {
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowActiveTextFg);
+		p.setOpacity(0.1);
+		p.drawRoundedRect(
+			_refreshRect,
+			style::ConvertScale(5),
+			style::ConvertScale(5));
+		p.setOpacity(1.0);
+	}
+	p.drawText(_refreshRect, style::al_center, refreshText);
+
 	p.fillRect(
 		0,
 		TitleHeight() - 1,
 		width(),
 		1,
 		st::shadowFg);
+}
+
+void TargetsView::mousePressEvent(QMouseEvent *e) {
+	if (_refreshRect.contains(e->pos())) {
+		reload();
+		return;
+	}
+	Ui::RpWidget::mousePressEvent(e);
+}
+
+void TargetsView::mouseMoveEvent(QMouseEvent *e) {
+	const auto over = _refreshRect.contains(e->pos());
+	if (over != _refreshHovered) {
+		_refreshHovered = over;
+		update();
+	}
+	setCursor(over ? style::cur_pointer : style::cur_default);
+	Ui::RpWidget::mouseMoveEvent(e);
+}
+
+bool TargetsView::eventFilter(QObject *obj, QEvent *e) {
+	if (obj == this
+		&& (e->type() == QEvent::Leave || e->type() == QEvent::Enter)) {
+		// Hover follows the live cursor in paintEvent; a Leave/Enter
+		// has to trigger the repaint itself.
+		update();
+	}
+	return Ui::RpWidget::eventFilter(obj, e);
 }
 
 TargetsView::Row::Row(

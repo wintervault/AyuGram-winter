@@ -24,6 +24,9 @@ public:
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	void mousePressEvent(QMouseEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	bool eventFilter(QObject *obj, QEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 
 private:
@@ -34,6 +37,11 @@ private:
 	class Row;
 	std::vector<object_ptr<Row>> _rows;
 	bool _loaded = false;
+
+	// "Refresh" pill in the title strip: geometry cached by paintEvent,
+	// hover highlight derived from the live cursor position.
+	QRect _refreshRect;
+	bool _refreshHovered = false;
 
 };
 
