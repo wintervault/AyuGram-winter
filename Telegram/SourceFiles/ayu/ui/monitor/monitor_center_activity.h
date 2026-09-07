@@ -98,10 +98,13 @@ private:
 	bool _loading = false;
 	int _contentHeight = 0;
 
-	// Destructive "Clear history" pill: geometry cached by paintEvent,
-	// hover highlight derived from the live cursor position.
+	// Filter-row pills: geometry cached by paintEvent, hover highlight
+	// derived from the live cursor position. "Clear history" is the
+	// destructive one; "Refresh" force-reloads the feed and the tiles.
 	QRect _clearRect;
 	bool _clearHovered = false;
+	QRect _refreshRect;
+	bool _refreshHovered = false;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
 	Fn<void()> _scrollToTop;

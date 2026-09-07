@@ -481,6 +481,34 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	p.setPen(st::boxTextFgError);
 	p.drawText(_clearRect, style::al_center, clearText);
 
+	// "Refresh" pill, to the left of the destructive one: force-reloads
+	// tiles and the feed (neutral color, hover in a soft accent).
+	const auto refreshText = u"Refresh"_q;
+	const auto refreshTextWidth = metrics.horizontalAdvance(refreshText);
+	const auto refreshPad = style::ConvertScale(10);
+	_refreshRect = QRect(
+		_clearRect.x()
+			- style::ConvertScale(10)
+			- refreshTextWidth
+			- 2 * refreshPad,
+		chipY,
+		refreshTextWidth + 2 * refreshPad,
+		ChipHeight());
+	_refreshHovered = _refreshRect.contains(mapFromGlobal(QCursor::pos()));
+	if (_refreshHovered) {
+		const auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowActiveTextFg);
+		p.setOpacity(0.1);
+		p.drawRoundedRect(
+			_refreshRect,
+			style::ConvertScale(5),
+			style::ConvertScale(5));
+		p.setOpacity(1.0);
+	}
+	p.setPen(st::windowSubTextFg);
+	p.drawText(_refreshRect, style::al_center, refreshText);
+
 	// Groups.
 	const auto listTop = TilesHeight() + FiltersHeight();
 	auto y = listTop;
@@ -680,14 +708,18 @@ void ActivityView::showFilterMenu(int chipIndex, QPoint globalPos) {
 }
 
 void ActivityView::mouseMoveEvent(QMouseEvent *e) {
-	const auto over = _clearRect.contains(e->pos());
-	if (over != _clearHovered) {
+	const auto overClear = _clearRect.contains(e->pos());
+	const auto overRefresh = _refreshRect.contains(e->pos());
+	if ((overClear != _clearHovered) || (overRefresh != _refreshHovered)) {
 		// Full repaint: a cached-rect partial update can miss the new
 		// pill position after a resize.
-		_clearHovered = over;
+		_clearHovered = overClear;
+		_refreshHovered = overRefresh;
 		update();
 	}
-	setCursor(over ? style::cur_pointer : style::cur_default);
+	setCursor((overClear || overRefresh)
+		? style::cur_pointer
+		: style::cur_default);
 	Ui::RpWidget::mouseMoveEvent(e);
 }
 
@@ -764,6 +796,12 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 		}
 		if (_clearRect.contains(pos)) {
 			clearHistory();
+			return;
+		}
+		if (_refreshRect.contains(pos)) {
+			// Manual refresh: reload tiles and the feed from scratch.
+			resetHistory();
+			_scrollToTop();
 			return;
 		}
 		return;

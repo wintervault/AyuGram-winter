@@ -454,6 +454,12 @@ void TargetsView::Row::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	const auto w = width();
 
+	// Paint the background: the row must be self-sufficient. A fully
+	// transparent row used to show blank patches after a remove
+	// confirmation reloaded the list in the same event-loop round as
+	// the confirm overlay's pending destruction.
+	p.fillRect(rect(), st::boxBg);
+
 	p.setFont(st::semiboldFont);
 	p.setPen(st::windowFg);
 	p.drawText(
@@ -527,7 +533,11 @@ void TargetsView::Row::mousePressEvent(QMouseEvent *e) {
 						ownTarget.peerId,
 						ownTarget.topicId);
 					AyuFeatures::Monitor::InvalidateTargetsCache();
-					ownChanged();
+					// Reload on a later event-loop round: the confirm
+					// overlay is still pending destruction (deleteLater)
+					// in this round, and interleaving its teardown with
+					// the row rebuild produced stale blank patches.
+					crl::on_main(ownChanged);
 				});
 		}
 		return;
