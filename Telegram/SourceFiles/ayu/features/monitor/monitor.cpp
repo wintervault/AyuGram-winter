@@ -15,7 +15,11 @@
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/mime_type.h"
+#include "data/data_channel.h"
 #include "data/data_document.h"
+#include "data/data_forum.h"
+#include "data/data_forum_topic.h"
+#include "data/data_peer.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
@@ -64,7 +68,7 @@ QString ResolveSaveRoot() {
 }
 
 QString DefaultNameTemplate() {
-	return u"{chat_title}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
+	return u"{chat_title}\\{topic}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
 }
 
 namespace {
@@ -136,6 +140,30 @@ struct PendingMedia {
 	case MediaType::audio: return u"mp3"_q;
 	default: return QString();
 	}
+}
+
+// Topic dimension for the naming template: forum messages carry the
+// name of their topic, anything else contributes an empty value (the
+// segment gets dropped by the template splitter). This makes a
+// chat-level target effectively behave as "all topics" archiving.
+[[nodiscard]] QString TopicNameForItem(not_null<HistoryItem*> item) {
+	const auto peer = item->history()->peer;
+	if (!peer->isForum()) {
+		return QString();
+	}
+	const auto rootId = item->topicRootId().bare;
+	if (rootId == Data::ForumTopic::kGeneralId) {
+		return u"General"_q;
+	}
+	if (const auto channel = peer->asChannel()) {
+		if (const auto forum = channel->forum()) {
+			if (const auto topic = forum->topicFor(MsgId(rootId))) {
+				return topic->title();
+			}
+		}
+	}
+	// Topic not (yet) loaded: fall back to the numeric id.
+	return u"#%1"_q.arg(rootId);
 }
 
 [[nodiscard]] MediaType ClassifyDocument(not_null<DocumentData*> document) {
@@ -245,25 +273,50 @@ TargetsCache &TargetsCacheInstance() {
 		MediaType type) {
 	const auto targets = GetTargetsCached(userId);
 	const auto name = TypeName(type);
-	for (const auto &target : targets) {
-		if (!target.enabled || target.peerId != peerId) {
-			continue;
-		}
-		if (target.topicId != 0 && target.topicId != topicId) {
-			continue;
-		}
-		if (target.mediaTypes.empty()) {
+	const auto typesAllow = [&name](const std::string &mediaTypes) {
+		// "none" (or any name never matching a real type) allows nothing.
+		if (mediaTypes.empty()) {
 			return true;
 		}
-		const auto parts = QString::fromStdString(target.mediaTypes)
+		const auto parts = QString::fromStdString(mediaTypes)
 			.split(',', Qt::SkipEmptyParts);
 		for (const auto &part : parts) {
 			if (part.trimmed() == name) {
 				return true;
 			}
 		}
+		return false;
+	};
+	// Most specific wins: a topic-level target overrides the chat-level
+	// one for messages of its own topic; the chat-level target covers
+	// messages no topic target matches. Otherwise the earlier union
+	// semantics let a chat-level "allow all" hijack topic restrictions.
+	auto topicPresent = false;
+	auto topicAllowed = false;
+	auto chatPresent = false;
+	auto chatAllowed = false;
+	for (const auto &target : targets) {
+		if (!target.enabled || target.peerId != peerId) {
+			continue;
+		}
+		if (target.topicId != 0) {
+			if (target.topicId != topicId) {
+				continue;
+			}
+			topicPresent = true;
+			if (typesAllow(target.mediaTypes)) {
+				topicAllowed = true;
+			}
+		} else {
+			chatPresent = true;
+			if (typesAllow(target.mediaTypes)) {
+				chatAllowed = true;
+			}
+		}
 	}
-	return false;
+	return topicPresent
+		? topicAllowed
+		: (chatPresent ? chatAllowed : false);
 }
 
 void AppendEvent(
@@ -376,7 +429,10 @@ void AppendSkipEvent(
 	const auto vars = std::vector<std::pair<QString, QString>>{
 		{ u"chat_title"_q, SanitizeNamePart(item->history()->peer->name()) },
 		{ u"chat_id"_q, QString::number(item->history()->peer->id.value & PeerId::kChatTypeMask) },
-		{ u"topic_id"_q, QString::number(item->topicRootId().bare) },
+		{ u"topic"_q, SanitizeNamePart(TopicNameForItem(item)) },
+		{ u"topic_id"_q, item->history()->peer->isForum()
+			? SanitizeNamePart(QString::number(item->topicRootId().bare))
+			: QString() },
 		{ u"msg_id"_q, QString::number(item->id.bare) },
 		{ u"media_id"_q, QString::number(media.mediaId) },
 		{ u"type"_q, TypeName(media.type) },

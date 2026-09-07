@@ -746,7 +746,7 @@ private:
 	rpl::variable<bool> _monitorEnabled = false;
 	rpl::variable<bool> _monitorPaused = false;
 	rpl::variable<QString> _monitorSaveRoot;
-	rpl::variable<QString> _monitorNameTemplate = u"{chat_title}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
+	rpl::variable<QString> _monitorNameTemplate = u"{chat_title}\\{topic}\\{yyyy-MM-dd}\\{msg_id}_{orig_name}"_q;
 	rpl::variable<bool> _monitorDownloadPhoto = true;
 	rpl::variable<bool> _monitorDownloadVideo = true;
 	rpl::variable<bool> _monitorDownloadVoice = true;
