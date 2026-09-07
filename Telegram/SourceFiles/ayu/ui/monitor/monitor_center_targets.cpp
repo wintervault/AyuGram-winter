@@ -163,9 +163,11 @@ private:
 
 TargetsView::TargetsView(
 	QWidget *parent,
-	not_null<Window::SessionController*> controller)
+	not_null<Window::SessionController*> controller,
+	Fn<void()> changedExternally)
 : Ui::RpWidget(parent)
-, _controller(controller) {
+, _controller(controller)
+, _changedExternally(std::move(changedExternally)) {
 	// Live-cursor hover for the title-strip refresh pill: repaint on
 	// Leave (cursor out) and Enter (overlay dismissed above us).
 	setMouseTracking(true);
@@ -218,12 +220,11 @@ void TargetsView::reload() {
 			stats.done,
 			stats.bytes,
 			stats.failed,
-			[=, guard = QPointer<TargetsView>(this)] {
-				// Overlay confirm callbacks may run after this view was
-				// destroyed by a view switch.
-				if (guard) {
-					guard->reload();
-				}
+			[=, changed = _changedExternally] {
+				// The host rebuilds the whole view (host-side reloads
+				// lose child paint dispatches after a row was removed);
+				// value-captured, safe past this view's destruction.
+				changed();
 			},
 			[=] { relayout(); });
 		_rows.push_back(std::move(row));
@@ -295,14 +296,13 @@ void TargetsView::paintEvent(QPaintEvent *e) {
 	if (_refreshHovered) {
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
-		p.setBrush(st::windowActiveTextFg);
-		p.setOpacity(0.1);
+		p.setBrush(st::windowBgOver);
 		p.drawRoundedRect(
 			_refreshRect,
 			style::ConvertScale(5),
 			style::ConvertScale(5));
-		p.setOpacity(1.0);
 	}
+	p.setPen(_refreshHovered ? st::windowFg : st::windowSubTextFg);
 	p.drawText(_refreshRect, style::al_center, refreshText);
 
 	p.fillRect(

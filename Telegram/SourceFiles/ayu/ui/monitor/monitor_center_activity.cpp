@@ -498,15 +498,14 @@ void ActivityView::paintEvent(QPaintEvent *e) {
 	if (_refreshHovered) {
 		const auto hq = PainterHighQualityEnabler(p);
 		p.setPen(Qt::NoPen);
-		p.setBrush(st::windowActiveTextFg);
-		p.setOpacity(0.1);
+		p.setBrush(st::windowBgOver);
 		p.drawRoundedRect(
 			_refreshRect,
 			style::ConvertScale(5),
 			style::ConvertScale(5));
-		p.setOpacity(1.0);
 	}
-	p.setPen(st::windowSubTextFg);
+	p.setFont(st::normalFont);
+	p.setPen(_refreshHovered ? st::windowFg : st::windowSubTextFg);
 	p.drawText(_refreshRect, style::al_center, refreshText);
 
 	// Groups.

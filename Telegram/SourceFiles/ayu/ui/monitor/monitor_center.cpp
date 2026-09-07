@@ -153,7 +153,7 @@ public:
 
 private:
 	void relayoutBody(QSize size);
-	void showView(View view);
+	void showView(View view, bool force = false);
 
 	const not_null<Window::SessionController*> _controller;
 	object_ptr<Ui::RpWidget> _header;
@@ -242,8 +242,8 @@ CenterWindow::CenterWindow(
 	showView(_view);
 }
 
-void CenterWindow::showView(View view) {
-	if (_view == view && _content) {
+void CenterWindow::showView(View view, bool force) {
+	if (_view == view && _content && !force) {
 		return;
 	}
 	_view = view;
@@ -257,7 +257,14 @@ void CenterWindow::showView(View view) {
 		_content = _activity.data();
 	} else {
 		_content = _scroll->setOwnedWidget(
-			object_ptr<TargetsView>(body(), _controller));
+			object_ptr<TargetsView>(
+				body(),
+				_controller,
+				[=] {
+					// Rebuild the view after a target removal: it is
+					// the only render path that is reliably clean.
+					showView(View::targets, true);
+				}));
 	}
 	if (_view == View::activity && _activity) {
 		_activity->refreshStats();

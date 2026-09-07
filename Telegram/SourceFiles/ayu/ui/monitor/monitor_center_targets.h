@@ -18,9 +18,13 @@ namespace MonitorCenter {
 // editor and removal, with per-target download stats.
 class TargetsView final : public Ui::RpWidget {
 public:
+	// changedExternally: invoked after a target was removed — the host
+	// rebuilds the whole view, which is the only reliably-rendered
+	// path (in-place reloads lose child paint dispatches).
 	TargetsView(
 		QWidget *parent,
-		not_null<Window::SessionController*> controller);
+		not_null<Window::SessionController*> controller,
+		Fn<void()> changedExternally);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -36,6 +40,7 @@ private:
 	const not_null<Window::SessionController*> _controller;
 	class Row;
 	std::vector<object_ptr<Row>> _rows;
+	Fn<void()> _changedExternally;
 	bool _loaded = false;
 
 	// "Refresh" pill in the title strip: geometry cached by paintEvent,
