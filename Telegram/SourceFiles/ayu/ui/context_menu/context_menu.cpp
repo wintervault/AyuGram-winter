@@ -463,12 +463,17 @@ void AddMonitorAction(PeerData *peerData,
 			if (monitored) {
 				AyuDatabase::Monitor::removeMonitorTarget(userId, peerId, topicId);
 			} else {
-				auto target = MonitorTarget();
+				// Re-enabling (or re-adding after a removal): keep any
+				// mediaTypes whitelist the row already carries instead
+				// of resetting it to follow-the-global-toggles.
+				auto target = existing.value_or(MonitorTarget());
 				target.userId = userId;
 				target.peerId = peerId;
 				target.topicId = topicId;
 				target.enabled = true;
-				target.addedDate = base::unixtime::now();
+				if (!target.addedDate) {
+					target.addedDate = base::unixtime::now();
+				}
 				AyuDatabase::Monitor::upsertMonitorTarget(target);
 			}
 			AyuFeatures::Monitor::InvalidateTargetsCache();

@@ -153,6 +153,9 @@ auto storage = make_storage(
 			   column<MonitorFile>(&MonitorFile::userId),
 			   column<MonitorFile>(&MonitorFile::peerId),
 			   column<MonitorFile>(&MonitorFile::messageId)),
+	make_index("idx_monitor_file_userId_status",
+			   column<MonitorFile>(&MonitorFile::userId),
+			   column<MonitorFile>(&MonitorFile::status)),
 	make_table<MonitorTarget>(
 		"MonitorTarget",
 		make_column("fakeId", &MonitorTarget::fakeId, primary_key().autoincrement()),
@@ -750,6 +753,7 @@ std::optional<MonitorFile> getMonitorFile(ID userId, ID mediaId, const std::stri
 				c(&MonitorFile::userId) == userId &&
 				c(&MonitorFile::mediaId) == mediaId &&
 				c(&MonitorFile::type) == type),
+			order_by(&MonitorFile::fakeId).desc(),
 			limit(1));
 		if (rows.empty()) {
 			return std::nullopt;

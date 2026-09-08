@@ -777,6 +777,19 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 		return;
 	}
 	if (pos.y() >= chipY && pos.y() < chipY + ChipHeight()) {
+		// Pills are painted above the chips, so hit-test them first
+		// (draw order and hit order must agree, even when they overlap
+		// at narrow widths).
+		if (_clearRect.contains(pos)) {
+			clearHistory();
+			return;
+		}
+		if (_refreshRect.contains(pos)) {
+			// Manual refresh: reload tiles and the feed from scratch.
+			resetHistory();
+			_scrollToTop();
+			return;
+		}
 		const auto metrics = QFontMetrics(st::normalFont);
 		const auto chips = std::vector<QString>{
 			u"Target: "_q + _targetOptions[_targetFilter].second,
@@ -792,19 +805,6 @@ void ActivityView::mousePressEvent(QMouseEvent *e) {
 				return;
 			}
 			chipLeft += width + style::ConvertScale(10);
-		}
-		// Pills are painted above the chips, so hit-test them first
-		// (draw order and hit order must agree, even when they overlap
-		// at narrow widths).
-		if (_clearRect.contains(pos)) {
-			clearHistory();
-			return;
-		}
-		if (_refreshRect.contains(pos)) {
-			// Manual refresh: reload tiles and the feed from scratch.
-			resetHistory();
-			_scrollToTop();
-			return;
 		}
 		return;
 	}

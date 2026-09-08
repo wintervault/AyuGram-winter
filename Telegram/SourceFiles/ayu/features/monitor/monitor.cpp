@@ -391,6 +391,14 @@ void AppendSkipEvent(
 		if (document->sticker()) {
 			return std::nullopt;
 		}
+		if (document->hasWebLocation()) {
+			// Web-located documents load into the shared cache only:
+			// the upstream loader constructors drop the target file for
+			// them (data_document.cpp web branches), so the archive
+			// copy never lands and every attempt would burn retries.
+			// Same silent-skip pattern as stickers.
+			return std::nullopt;
+		}
 		result.document = document;
 		result.type = ClassifyDocument(document);
 		result.mediaId = document->id;
@@ -598,8 +606,20 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	auto row = std::optional<MonitorFile>();
 	if (auto existing = AyuDatabase::Monitor::getMonitorFile(userId, media.mediaId, typeName)) {
 		const auto status = existing->status;
-		const auto fileGone = (status == int(MonitorFileStatus::done))
-			&& !QFileInfo::exists(QString::fromStdString(existing->filePath));
+		const auto rowPath = QString::fromStdString(existing->filePath);
+		const auto rowInfo = QFileInfo(rowPath);
+		auto fileGone = (status == int(MonitorFileStatus::done)) && !rowInfo.exists();
+		// A same-path latecomer (non-unique template) or a truncated
+		// write can leave the recorded path occupied by foreign bytes
+		// while the record says done. Re-verify the recorded size for
+		// document rows; photo rows keep an estimated size, not the
+		// encoded one, so the check does not apply to them.
+		if (!fileGone
+			&& status == int(MonitorFileStatus::done)
+			&& existing->type != "photo"
+			&& rowInfo.size() != existing->fileSize) {
+			fileGone = true;
+		}
 		if (status != int(MonitorFileStatus::failed) && !fileGone) {
 			return;
 		}
@@ -611,18 +631,17 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 			&& base::unixtime::now() - existing->downloadedDate < kFailedRetryCooldownSec) {
 			return;
 		}
-		const auto path = QString::fromStdString(existing->filePath);
 		// Another task for this exact file may be active or queued
 		// (same path via a second account or a non-unique template).
 		// Bailing BEFORE touching the row keeps it failed: a pending
 		// row with no task behind it would be stuck until restart.
-		if (HasTaskForPath(path)) {
+		if (HasTaskForPath(rowPath)) {
 			return;
 		}
 		// The file (or its whole directory) may have been removed while
 		// the record still says done: recreate the directory or the
 		// retry would fail for good.
-		QDir().mkpath(QFileInfo(path).absolutePath());
+		QDir().mkpath(rowInfo.absolutePath());
 		existing->status = int(MonitorFileStatus::pending);
 		existing->errorInfo.clear();
 		existing->downloadedDate = base::unixtime::now();
