@@ -561,7 +561,14 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	if (media.photo) {
 		photoSize = ResolveBestPhotoSize(media.photo);
 		if (!photoSize) {
-			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"no valid photo size"_q);
+			AppendSkipEvent(
+				userId,
+				2,
+				peerId,
+				item->topicRootId().bare,
+				msgId,
+				u"error-photo-size"_q,
+				u"no valid photo size"_q);
 			return;
 		}
 	}
@@ -608,26 +615,32 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		const auto status = existing->status;
 		const auto rowPath = QString::fromStdString(existing->filePath);
 		const auto rowInfo = QFileInfo(rowPath);
-		auto fileGone = (status == int(MonitorFileStatus::done)) && !rowInfo.exists();
-		// A same-path latecomer (non-unique template) or a truncated
-		// write can leave the recorded path occupied by foreign bytes
-		// while the record says done. Re-verify the recorded size for
-		// document rows; photo rows keep an estimated size, not the
-		// encoded one, so the check does not apply to them.
-		if (!fileGone
+		const auto fileMissing = (status == int(MonitorFileStatus::done))
+			&& !rowInfo.exists();
+		// A same-path latecomer (non-unique template) or a truncated /
+		// externally rewritten file can leave the recorded path
+		// occupied by foreign bytes while the record says done.
+		// Re-verify the recorded size for document rows; photo rows
+		// keep an estimated size, so the check does not apply to them.
+		auto sizeMismatch = false;
+		if (!fileMissing
 			&& status == int(MonitorFileStatus::done)
 			&& existing->type != "photo"
 			&& rowInfo.size() != existing->fileSize) {
-			fileGone = true;
+			sizeMismatch = true;
 		}
+		const auto fileGone = fileMissing || sizeMismatch;
 		if (status != int(MonitorFileStatus::failed) && !fileGone) {
 			return;
 		}
-		// Edit storms and redeliveries must not restart a freshly
-		// failed chain: the failed row keeps its state until the
-		// cooldown passes. A vanished done-file is an explicit external
-		// action (the user removed the file), retry it right away.
-		if (status == int(MonitorFileStatus::failed)
+		// A vanished done-file is an explicit external action (the user
+		// removed the file), retry it right away. A size mismatch, on
+		// the other hand, may be a latecomer row occupying the same
+		// path or a tool touching the file: treat it like a failure
+		// and let the cooldown gate re-download loops - otherwise two
+		// rows sharing a path would keep overwriting each other on
+		// every edit event.
+		if ((status == int(MonitorFileStatus::failed) || sizeMismatch)
 			&& base::unixtime::now() - existing->downloadedDate < kFailedRetryCooldownSec) {
 			return;
 		}
@@ -650,7 +663,14 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 	} else {
 		const auto latestVersion = AyuDatabase::Monitor::getLatestFileVersion(userId, peerId, msgId);
 		if (!latestVersion.has_value()) {
-			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"version query failed"_q);
+			AppendSkipEvent(
+				userId,
+				2,
+				peerId,
+				item->topicRootId().bare,
+				msgId,
+				u"error-version-query"_q,
+				u"version query failed"_q);
 			return;
 		}
 		const auto version = *latestVersion + 1;
@@ -680,7 +700,14 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		}
 		const auto dir = QFileInfo(path).absolutePath();
 		if (!QDir().mkpath(dir)) {
-			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"mkpath failed: %1"_q.arg(dir));
+			AppendSkipEvent(
+				userId,
+				2,
+				peerId,
+				item->topicRootId().bare,
+				msgId,
+				u"error-mkpath"_q,
+				u"mkpath failed: %1"_q.arg(dir));
 			return;
 		}
 		// Same-path collision guard before the row exists: a pending
@@ -703,7 +730,14 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		fresh.downloadedDate = base::unixtime::now();
 		const auto rowId = AyuDatabase::Monitor::addMonitorFile(fresh);
 		if (!rowId.has_value()) {
-			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"db insert failed"_q);
+			AppendSkipEvent(
+				userId,
+				2,
+				peerId,
+				item->topicRootId().bare,
+				msgId,
+				u"error-db-insert"_q,
+				u"db insert failed"_q);
 			return;
 		}
 		fresh.fakeId = rowId.value();

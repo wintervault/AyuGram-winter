@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <utility>
+#include <QTimer>
 
 namespace Ui {
 class PopupMenu;
@@ -68,6 +69,7 @@ private:
 	void loadPage();
 	void resetHistory();
 	void refreshFinishedRows(const std::vector<QString> &finished);
+	void flushFinishedPending();
 	std::optional<std::pair<int, int>> hitVersionRow(QPoint pos) const;
 	void showFileMenu(QPoint globalPos, const VersionRow &row);
 	void showFilterMenu(int chipIndex, QPoint globalPos);
@@ -92,6 +94,12 @@ private:
 
 	std::vector<Group> _groups;
 	std::set<std::pair<long long, int>> _groupedMessages;
+
+	// Throttled terminal-state flush: QueueChanged fires per queue
+	// event, but the row refresh + 5 aggregate stats queries must not
+	// run per event during download storms.
+	QTimer _statsFlushTimer;
+	std::vector<QString> _pendingFinished;
 	long long _oldestFakeId = 0;
 	std::set<QString> _lastActivePaths;
 	bool _endReached = false;

@@ -51,6 +51,7 @@ enum class DownloadFailure {
 	Io,
 	FailedLoad,
 	SessionEnd,
+	QueueOverflow,
 };
 
 [[nodiscard]] inline const char *ReasonName(DownloadFailure failure) {
@@ -64,6 +65,7 @@ enum class DownloadFailure {
 	case DownloadFailure::Io: return "io";
 	case DownloadFailure::FailedLoad: return "failed-load";
 	case DownloadFailure::SessionEnd: return "session-end";
+	case DownloadFailure::QueueOverflow: return "queue-overflow";
 	}
 	return "unknown";
 }

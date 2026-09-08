@@ -32,6 +32,11 @@ constexpr auto kRetryDelays = std::array<crl::time, kMaxRetries>{
 // just pin a slot for the same outcome.
 constexpr auto kMaxStallRetries = 1;
 constexpr auto kStallRetryDelay = 60 * crl::time(1000);
+// Backpressure: with 5 slots busy on 60-minute downloads (the absolute
+// cap) a busy channel would otherwise grow the queue without bound
+// (hundreds of MB of Tasks per hour). Shedding the oldest queued task
+// fails its row cleanly; a later event can re-enqueue it.
+constexpr auto kMaxQueued = 1000;
 
 struct Task {
 	not_null<Main::Session*> session;
@@ -53,6 +58,15 @@ struct Task {
 std::deque<Task> &Queue() {
 	static std::deque<Task> result;
 	return result;
+}
+
+void ShedOldestQueued() {
+	auto &queue = Queue();
+	while (queue.size() >= kMaxQueued) {
+		auto shed = std::move(queue.front());
+		queue.pop_front();
+		shed.done(false, DownloadFailure::QueueOverflow);
+	}
 }
 
 int &ActiveCount() {
@@ -220,6 +234,7 @@ void EnqueueDocumentDownload(
 		Data::FileOrigin origin,
 		const QString &path,
 		Fn<void(bool, DownloadFailure)> done) {
+	ShedOldestQueued();
 	Queue().push_back({
 		session,
 		document,
@@ -241,6 +256,7 @@ void EnqueuePhotoDownload(
 		Data::FileOrigin origin,
 		const QString &path,
 		Fn<void(bool, DownloadFailure)> done) {
+	ShedOldestQueued();
 	Queue().push_back({
 		session,
 		nullptr,

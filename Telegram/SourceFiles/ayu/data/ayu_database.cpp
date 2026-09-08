@@ -278,6 +278,16 @@ void moveCurrentDatabase() {
 
 void initialize() {
 	try {
+		// Monitor downloader writes several small transactions per
+		// download on the main thread; DELETE+FULL would fsync on every
+		// one of them. WAL + NORMAL amortizes that (and allows the
+		// async readers to proceed without blocking). NORMAL under WAL
+		// may lose the last transactions on a crash but never corrupts
+		// the database - acceptable for re-downloadable bookkeeping.
+		storage.pragma.journal_mode(sqlite_orm::journal_mode::WAL);
+		storage.pragma.synchronous(1); // NORMAL
+		storage.busy_timeout(5000);
+
 		storage.sync_schema(true);
 
 		runMigrations(storage);

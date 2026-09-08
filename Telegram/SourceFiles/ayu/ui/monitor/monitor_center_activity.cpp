@@ -147,6 +147,11 @@ ActivityView::ActivityView(
 
 	// Live overlay: repaint on queue changes, refresh rows that just
 	// finished (their DB status moved on since the page was loaded).
+	_statsFlushTimer.setSingleShot(true);
+	connect(&_statsFlushTimer, &QTimer::timeout, [=] {
+		flushFinishedPending();
+	});
+
 	AyuFeatures::Monitor::QueueChanged(
 	) | rpl::on_next([=] {
 		const auto snap = AyuFeatures::Monitor::SnapshotQueue();
@@ -161,11 +166,32 @@ ActivityView::ActivityView(
 		}
 		_lastActivePaths = current;
 		if (!finished.empty()) {
-			refreshFinishedRows(finished);
-			refreshStats();
+			// Throttle the DB-heavy flush (row refresh + aggregate
+			// stats): terminal states arrive faster than the queries
+			// should run during download storms.
+			_pendingFinished.insert(
+				_pendingFinished.end(),
+				finished.begin(),
+				finished.end());
+			if (!_statsFlushTimer.isActive()) {
+				_statsFlushTimer.start();
+			}
 		}
+		// Keep unconditional: the queue tile reads fresh counts here
+		// (enqueue/drain change them without touching activePaths), and
+		// update() itself is cheap - the paint is the expensive part.
 		update();
 	}, lifetime());
+}
+
+void ActivityView::flushFinishedPending() {
+	if (_pendingFinished.empty()) {
+		return;
+	}
+	refreshFinishedRows(_pendingFinished);
+	_pendingFinished.clear();
+	refreshStats();
+	update();
 }
 
 void ActivityView::refreshStats() {

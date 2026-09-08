@@ -463,10 +463,15 @@ void AddMonitorAction(PeerData *peerData,
 			if (monitored) {
 				AyuDatabase::Monitor::removeMonitorTarget(userId, peerId, topicId);
 			} else {
-				// Re-enabling (or re-adding after a removal): keep any
-				// mediaTypes whitelist the row already carries instead
-				// of resetting it to follow-the-global-toggles.
-				auto target = existing.value_or(MonitorTarget());
+				// Re-fetch at click time: the captured existing may be
+				// stale (the monitor center could have changed the
+				// whitelist while this menu was open). Re-enabling a
+				// disabled target keeps its mediaTypes whitelist
+				// instead of resetting it to follow-the-global
+				// toggles; a fresh add after a real removal starts
+				// clean (the row is gone by then).
+				auto target = AyuDatabase::Monitor::getMonitorTarget(userId, peerId, topicId)
+					.value_or(MonitorTarget());
 				target.userId = userId;
 				target.peerId = peerId;
 				target.topicId = topicId;
