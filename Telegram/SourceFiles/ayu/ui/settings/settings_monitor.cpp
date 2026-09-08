@@ -20,6 +20,7 @@
 #include "main/main_session.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
+#include "styles/style_ayu_icons.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
@@ -76,24 +77,28 @@ void BuildMonitorToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.title = tr::ayu_MonitorTypeVideo(),
 		.getter = &AyuSettings::monitorDownloadVideo,
 		.setter = &AyuSettings::setMonitorDownloadVideo,
+		.icon = { &st::menuIconQualityHigh },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/monitorVoice"_q,
 		.title = tr::ayu_MonitorTypeVoice(),
 		.getter = &AyuSettings::monitorDownloadVoice,
 		.setter = &AyuSettings::setMonitorDownloadVoice,
+		.icon = { &st::menuIconVoice },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/monitorAudio"_q,
 		.title = tr::ayu_MonitorTypeAudio(),
 		.getter = &AyuSettings::monitorDownloadAudio,
 		.setter = &AyuSettings::setMonitorDownloadAudio,
+		.icon = { &st::menuIconSoundSelect },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/monitorVideoNote"_q,
 		.title = tr::ayu_MonitorTypeVideoNote(),
 		.getter = &AyuSettings::monitorDownloadVideoNote,
 		.setter = &AyuSettings::setMonitorDownloadVideoNote,
+		.icon = { &st::menuIconVideoChat },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/monitorGif"_q,
