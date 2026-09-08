@@ -24,7 +24,16 @@
 namespace AyuFeatures::Monitor {
 namespace {
 
-constexpr auto kDownloadTimeoutMs = 10 * 60 * 1000;
+// Photo files are small and their failures resolve fast, the plain
+// total-time cap is enough for them.
+constexpr auto kPhotoTimeoutMs = 10 * 60 * 1000;
+// A document dies when no data chunk arrived for this long. Covers the
+// server-told FLOOD_WAIT waits (usually <= 3 min) while turning a
+// genuinely stuck download into a 4-minute slot release.
+constexpr auto kStallTimeoutMs = 4 * 60 * 1000;
+// Absolute lifetime of one document attempt even if data keeps flowing:
+// 60 min @ ~290 KB/s spans the default 1 GB size cap.
+constexpr auto kMaxDownloadMs = 60 * 60 * 1000;
 
 struct DownloadState {
 	rpl::lifetime lifetime;
@@ -33,18 +42,20 @@ struct DownloadState {
 
 void Finish(
 		const std::shared_ptr<DownloadState> &state,
-		Fn<void(bool)> done,
-		bool ok) {
+		Fn<void(bool, DownloadFailure)> done,
+		bool ok,
+		DownloadFailure reason) {
 	if (state->finished) {
 		return;
 	}
 	state->finished = true;
 	// Break the state -> lifetime -> subscription -> state ownership
-	// cycle; also stops stale filters from running after the finish.
+	// cycle; also stops stale filters and the stall watchdog from
+	// running after the finish.
 	state->lifetime.destroy();
 	const auto copy = done;
-	crl::on_main([state, copy, ok] {
-		copy(ok);
+	crl::on_main([state, copy, ok, reason] {
+		copy(ok, reason);
 	});
 }
 
@@ -88,22 +99,50 @@ void DownloadDocument(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
 		const QString &path,
-		Fn<void(bool)> done) {
+		Fn<void(bool, DownloadFailure)> done) {
 	const auto state = std::make_shared<DownloadState>();
 	// Releases the queue slot and defangs all pending callbacks when
-	// the session dies: the state owns every subscription, and the
-	// timeout timer and the deferred start both check the flag before
-	// touching the document.
+	// the session dies: the state owns every subscription, and both
+	// timers and the deferred start check the flag before touching
+	// the document.
 	MonitorSessionLifetime(session).add([state, done] {
-		Finish(state, done, false);
+		Finish(state, done, false, DownloadFailure::SessionEnd);
 	});
-	QTimer::singleShot(kDownloadTimeoutMs, [=] {
+	QTimer::singleShot(kMaxDownloadMs, [state, document, done] {
 		if (state->finished) {
 			return;
 		}
+		// Finish first: it drops the progress subscription, so the
+		// synchronous done event fired by cancel() below cannot reenter
+		// the final-judge branch and steal the reason (cancel() also
+		// removes the partial file, which would read as NotFound).
+		Finish(state, done, false, DownloadFailure::Timeout);
 		document->cancel();
-		Finish(state, done, false);
 	});
+
+	// Stall watchdog: a slow-but-alive download keeps restarting it
+	// from progress events, a stuck one runs out and frees the slot.
+	// The functor captures a raw pointer on purpose: a shared_ptr here
+	// would be held by the sender's own connection and never freed.
+	// Deleting a QObject inside its own timeout slot is safe on the
+	// Qt in use (ConnectionData refcounting + senderDeleted check,
+	// qobject.cpp activate), and the timer dies via lifetime.destroy()
+	// inside Finish.
+	const auto stall = std::make_shared<QTimer>();
+	const auto stallRaw = stall.get();
+	stall->setSingleShot(true);
+	QObject::connect(stallRaw, &QTimer::timeout, [state, document, done] {
+		if (state->finished) {
+			return;
+		}
+		// Finish before cancel: same reentry guard as the cap timer.
+		Finish(state, done, false, DownloadFailure::Stall);
+		document->cancel();
+	});
+	state->lifetime.add([stall] {
+		stall->stop();
+	});
+	stall->start(kStallTimeoutMs);
 
 	crl::on_main([=, done = std::move(done)]() mutable {
 		if (state->finished) {
@@ -113,7 +152,7 @@ void DownloadDocument(
 			// DocumentData has a single shared loader, which could be
 			// busy with a manual save; canceling it would kill that
 			// download. Fail fast instead, the queue retries later.
-			Finish(state, done, false);
+			Finish(state, done, false, DownloadFailure::LoadingConflict);
 			return;
 		}
 		document->save(origin, path);
@@ -122,17 +161,33 @@ void DownloadDocument(
 		// either the file was written or writing it failed right away.
 		if (!document->loading()) {
 			const auto file = QFile(path);
-			Finish(state, done, file.exists() && file.size() == document->size);
+			const auto ok = file.exists() && file.size() == document->size;
+			Finish(state, done, ok, ok ? DownloadFailure::None : DownloadFailure::Io);
 			return;
 		}
 
 		const auto documentId = document->id;
 		session->data().documentLoadProgress(
 		) | rpl::filter([=](not_null<DocumentData*> changed) {
-			return changed->id == documentId && !changed->loading();
-		}) | rpl::take(1) | rpl::on_next([=](not_null<DocumentData*> changed) mutable {
+			return changed->id == documentId;
+		}) | rpl::on_next([=](not_null<DocumentData*> changed) mutable {
+			if (state->finished) {
+				return;
+			}
+			if (changed->loading()) {
+				// Alive: every data chunk resets the stall watchdog.
+				stall->start(kStallTimeoutMs);
+				return;
+			}
+			// Done, failed or cancelled: judge by the file on disk.
+			stall->stop();
 			const auto file = QFile(path);
-			Finish(state, done, file.exists() && file.size() == changed->size);
+			const auto ok = file.exists() && file.size() == changed->size;
+			Finish(state, done, ok, ok
+				? DownloadFailure::None
+				: (file.exists()
+					? DownloadFailure::SizeMismatch
+					: DownloadFailure::NotFound));
 		}, state->lifetime);
 	});
 }
@@ -143,13 +198,13 @@ void DownloadPhoto(
 		Data::PhotoSize size,
 		Data::FileOrigin origin,
 		const QString &path,
-		Fn<void(bool)> done) {
+		Fn<void(bool, DownloadFailure)> done) {
 	const auto state = std::make_shared<DownloadState>();
 	MonitorSessionLifetime(session).add([state, done] {
-		Finish(state, done, false);
+		Finish(state, done, false, DownloadFailure::SessionEnd);
 	});
-	QTimer::singleShot(kDownloadTimeoutMs, [state, done] {
-		Finish(state, done, false);
+	QTimer::singleShot(kPhotoTimeoutMs, [state, done] {
+		Finish(state, done, false, DownloadFailure::Timeout);
 	});
 
 	crl::on_main([=, done = std::move(done)]() mutable {
@@ -158,7 +213,7 @@ void DownloadPhoto(
 		}
 		const auto view = photo->createMediaView();
 		if (!view) {
-			Finish(state, done, false);
+			Finish(state, done, false, DownloadFailure::NotFound);
 			return;
 		}
 		// A previous failed attempt leaves CloudFile::Flag::Failed set,
@@ -183,7 +238,7 @@ void DownloadPhoto(
 			} else {
 				ok = view->image(size)->original().save(path, "JPG");
 			}
-			Finish(state, done, ok);
+			Finish(state, done, ok, ok ? DownloadFailure::None : DownloadFailure::Io);
 			return true;
 		};
 
@@ -202,7 +257,7 @@ void DownloadPhoto(
 			if (view->image(size)) {
 				trySave();
 			} else {
-				Finish(state, done, false);
+				Finish(state, done, false, DownloadFailure::FailedLoad);
 			}
 		}, state->lifetime);
 	});

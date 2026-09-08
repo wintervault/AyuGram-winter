@@ -1039,7 +1039,10 @@ void failPendingMonitorFiles(ID userId) {
 		storage.update_all(
 			set(
 				c(&MonitorFile::status) = int(MonitorFileStatus::failed),
-				c(&MonitorFile::errorInfo) = "interrupted by app exit"),
+				c(&MonitorFile::errorInfo) = "interrupted by app exit",
+				// Anchor the retry cooldown at the interruption, not at
+				// the row creation: these rows are failed as of now.
+				c(&MonitorFile::downloadedDate) = base::unixtime::now()),
 			where(
 				c(&MonitorFile::userId) == userId &&
 				c(&MonitorFile::status) == int(MonitorFileStatus::pending)));

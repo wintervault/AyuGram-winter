@@ -6,6 +6,7 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
+#include "ayu/features/monitor/monitor_downloader.h"
 #include "data/data_file_origin.h"
 #include "data/data_photo.h"
 #include "rpl/producer.h"
@@ -29,7 +30,7 @@ void EnqueueDocumentDownload(
 	not_null<DocumentData*> document,
 	Data::FileOrigin origin,
 	const QString &path,
-	Fn<void(bool)> done);
+	Fn<void(bool, DownloadFailure)> done);
 
 void EnqueuePhotoDownload(
 	not_null<Main::Session*> session,
@@ -37,7 +38,12 @@ void EnqueuePhotoDownload(
 	Data::PhotoSize size,
 	Data::FileOrigin origin,
 	const QString &path,
-	Fn<void(bool)> done);
+	Fn<void(bool, DownloadFailure)> done);
+
+// True if a task for this exact path is active or queued (including
+// waiting retries). Callers use it to keep edit storms and duplicate
+// triggers from enqueuing a second chain for the same file.
+[[nodiscard]] bool HasTaskForPath(const QString &path);
 
 // Drop queued (not yet started) downloads of a session, on its end.
 void ClearSessionDownloads(not_null<Main::Session*> session);

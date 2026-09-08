@@ -39,12 +39,41 @@ void ClearMonitorSessionLifetime(not_null<Main::Session*> session);
 [[nodiscard]] std::optional<Data::PhotoSize> ResolveBestPhotoSize(
 	not_null<PhotoData*> photo);
 
+// Why a download attempt ended without a file. Stalls and timeouts are
+// structural (retrying rarely helps), the rest may recover on retry.
+enum class DownloadFailure {
+	None,
+	Stall,
+	Timeout,
+	LoadingConflict,
+	SizeMismatch,
+	NotFound,
+	Io,
+	FailedLoad,
+	SessionEnd,
+};
+
+[[nodiscard]] inline const char *ReasonName(DownloadFailure failure) {
+	switch (failure) {
+	case DownloadFailure::None: return "ok";
+	case DownloadFailure::Stall: return "stall";
+	case DownloadFailure::Timeout: return "timeout";
+	case DownloadFailure::LoadingConflict: return "loading-conflict";
+	case DownloadFailure::SizeMismatch: return "size-mismatch";
+	case DownloadFailure::NotFound: return "not-found";
+	case DownloadFailure::Io: return "io";
+	case DownloadFailure::FailedLoad: return "failed-load";
+	case DownloadFailure::SessionEnd: return "session-end";
+	}
+	return "unknown";
+}
+
 void DownloadDocument(
 	not_null<Main::Session*> session,
 	not_null<DocumentData*> document,
 	Data::FileOrigin origin,
 	const QString &path,
-	Fn<void(bool)> done);
+	Fn<void(bool, DownloadFailure)> done);
 
 void DownloadPhoto(
 	not_null<Main::Session*> session,
@@ -52,6 +81,6 @@ void DownloadPhoto(
 	Data::PhotoSize size,
 	Data::FileOrigin origin,
 	const QString &path,
-	Fn<void(bool)> done);
+	Fn<void(bool, DownloadFailure)> done);
 
 } // namespace AyuFeatures::Monitor

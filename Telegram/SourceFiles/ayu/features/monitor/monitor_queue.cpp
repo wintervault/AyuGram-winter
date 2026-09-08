@@ -27,6 +27,11 @@ constexpr auto kRetryDelays = std::array<crl::time, kMaxRetries>{
 	2 * crl::time(60 * 1000),
 	10 * crl::time(60 * 1000),
 };
+// Stall and timeout are structural: the source or the network did not
+// deliver for minutes. One later shot is enough, chaining retries would
+// just pin a slot for the same outcome.
+constexpr auto kMaxStallRetries = 1;
+constexpr auto kStallRetryDelay = 60 * crl::time(1000);
 
 struct Task {
 	not_null<Main::Session*> session;
@@ -35,10 +40,13 @@ struct Task {
 	Data::PhotoSize photoSize = Data::PhotoSize::Large;
 	Data::FileOrigin origin;
 	QString path;
-	Fn<void(bool)> done;
+	Fn<void(bool, DownloadFailure)> done;
 
 	// Retry bookkeeping: tasks wait in the queue until notBefore.
+	// Generic and stall-like failures keep separate budgets, so an
+	// early transient failure cannot eat the later stall shot.
 	int retries = 0;
+	int stallRetries = 0;
 	crl::time notBefore = 0;
 };
 
@@ -85,7 +93,7 @@ void Dispatch(Task task) {
 	// never be re-queued: its pointers dangle after the teardown, and
 	// the re-queue happens after ClearSessionDownloads already ran.
 	const auto alive = std::make_shared<bool>(true);
-	const auto finish = [task, alive](bool ok) mutable {
+	const auto finish = [task, alive](bool ok, DownloadFailure reason) mutable {
 		--ActiveCount();
 		{
 			auto &paths = ActivePaths();
@@ -94,18 +102,36 @@ void Dispatch(Task task) {
 				paths.erase(it);
 			}
 		}
-		if (!ok && *alive && task.retries < kMaxRetries) {
+		if (!ok && *alive) {
 			// The row keeps its pending state; retry later keeps it
 			// rescueable (in-memory messages refresh file_reference
 			// automatically, deleted ones fail for good).
-			task.notBefore = crl::now() + kRetryDelays[task.retries];
-			++task.retries;
-			Queue().push_back(std::move(task));
-			ChangedStream().fire({});
+			const auto stallLike = (reason == DownloadFailure::Stall
+				|| reason == DownloadFailure::Timeout);
+			if (stallLike) {
+				if (task.stallRetries < kMaxStallRetries) {
+					++task.stallRetries;
+					task.notBefore = crl::now() + kStallRetryDelay;
+					Queue().push_back(std::move(task));
+					ChangedStream().fire({});
+				} else {
+					// Write the final DB state BEFORE firing: observers
+					// read the database on this event to refresh tiles
+					// and rows.
+					task.done(ok, reason);
+					ChangedStream().fire({});
+				}
+			} else if (task.retries < kMaxRetries) {
+				task.notBefore = crl::now() + kRetryDelays[task.retries];
+				++task.retries;
+				Queue().push_back(std::move(task));
+				ChangedStream().fire({});
+			} else {
+				task.done(ok, reason);
+				ChangedStream().fire({});
+			}
 		} else {
-			// Write the final DB state BEFORE firing: observers read the
-			// database on this event to refresh tiles and rows.
-			task.done(ok);
+			task.done(ok, reason);
 			ChangedStream().fire({});
 		}
 		Pump();
@@ -193,7 +219,7 @@ void EnqueueDocumentDownload(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
 		const QString &path,
-		Fn<void(bool)> done) {
+		Fn<void(bool, DownloadFailure)> done) {
 	Queue().push_back({
 		session,
 		document,
@@ -214,7 +240,7 @@ void EnqueuePhotoDownload(
 		Data::PhotoSize size,
 		Data::FileOrigin origin,
 		const QString &path,
-		Fn<void(bool)> done) {
+		Fn<void(bool, DownloadFailure)> done) {
 	Queue().push_back({
 		session,
 		nullptr,
@@ -227,6 +253,17 @@ void EnqueuePhotoDownload(
 	EnsureInitialized();
 	ChangedStream().fire({});
 	Pump();
+}
+
+bool HasTaskForPath(const QString &path) {
+	auto &paths = ActivePaths();
+	if (paths.find(path) != paths.end()) {
+		return true;
+	}
+	auto &queue = Queue();
+	return std::any_of(queue.begin(), queue.end(), [&](const Task &task) {
+		return task.path == path;
+	});
 }
 
 // Also drops not-yet-dispatched retries, they live in the same queue.

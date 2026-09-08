@@ -41,6 +41,10 @@ namespace AyuFeatures::Monitor {
 namespace {
 
 constexpr auto kEventLogLimit = 500;
+// A failed row may be retried by an event (edit, redelivery) only this
+// long after its last failure; keeps edit storms from restarting the
+// retry chain endlessly.
+constexpr auto kFailedRetryCooldownSec = 10 * 60;
 
 enum class MediaType {
 	photo,
@@ -599,11 +603,26 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 		if (status != int(MonitorFileStatus::failed) && !fileGone) {
 			return;
 		}
+		// Edit storms and redeliveries must not restart a freshly
+		// failed chain: the failed row keeps its state until the
+		// cooldown passes. A vanished done-file is an explicit external
+		// action (the user removed the file), retry it right away.
+		if (status == int(MonitorFileStatus::failed)
+			&& base::unixtime::now() - existing->downloadedDate < kFailedRetryCooldownSec) {
+			return;
+		}
+		const auto path = QString::fromStdString(existing->filePath);
+		// Another task for this exact file may be active or queued
+		// (same path via a second account or a non-unique template).
+		// Bailing BEFORE touching the row keeps it failed: a pending
+		// row with no task behind it would be stuck until restart.
+		if (HasTaskForPath(path)) {
+			return;
+		}
 		// The file (or its whole directory) may have been removed while
 		// the record still says done: recreate the directory or the
 		// retry would fail for good.
-		QDir().mkpath(QFileInfo(
-			QString::fromStdString(existing->filePath)).absolutePath());
+		QDir().mkpath(QFileInfo(path).absolutePath());
 		existing->status = int(MonitorFileStatus::pending);
 		existing->errorInfo.clear();
 		existing->downloadedDate = base::unixtime::now();
@@ -645,6 +664,11 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 			AppendEvent(userId, 2, u"error"_q, peerId, msgId, u"mkpath failed: %1"_q.arg(dir));
 			return;
 		}
+		// Same-path collision guard before the row exists: a pending
+		// row with no task behind it would be stuck until restart.
+		if (HasTaskForPath(path)) {
+			return;
+		}
 		auto fresh = MonitorFile();
 		fresh.userId = userId;
 		fresh.mediaId = media.mediaId;
@@ -669,7 +693,7 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 
 	const auto rowId = row->fakeId;
 	const auto path = QString::fromStdString(row->filePath);
-	const auto finish = [=](bool ok) {
+	const auto finish = [=](bool ok, DownloadFailure reason) {
 		if (auto existing = AyuDatabase::Monitor::getMonitorFileById(userId, rowId)) {
 			if (!ok
 				&& existing->status == int(MonitorFileStatus::done)
@@ -679,7 +703,9 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 				return;
 			}
 			existing->status = int(ok ? MonitorFileStatus::done : MonitorFileStatus::failed);
-			existing->errorInfo = ok ? "" : "download failed";
+			existing->errorInfo = ok
+				? std::string()
+				: std::string("download failed: ") + ReasonName(reason);
 			existing->downloadedDate = base::unixtime::now();
 			AyuDatabase::Monitor::updateMonitorFile(*existing);
 			AppendEvent(
@@ -688,10 +714,17 @@ void EnsureMediaDownloaded(not_null<HistoryItem*> item) {
 				u"download"_q,
 				peerId,
 				msgId,
-				ok ? u"saved: %1"_q.arg(path) : u"failed: %1"_q.arg(path));
+				ok
+					? u"saved: %1"_q.arg(path)
+					: u"failed (%1): %2"_q.arg(
+						QString::fromLatin1(ReasonName(reason)),
+						path));
 		}
 	};
 
+	// Duplicate-trigger defense lives before the row reset/creation
+	// (HasTaskForPath above); the edit-before/edit-after hook pair is
+	// additionally split by the pending-status check on reentry.
 	if (media.document) {
 		EnqueueDocumentDownload(session, media.document, origin, path, finish);
 	} else {
